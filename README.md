@@ -87,3 +87,20 @@ The skill must stay well under 2,000 o200k tokens.
 MIT. See [LICENSE](LICENSE). A2UI is a separate project under Apache License
 2.0. This repository does not copy hermes-a2ui source; that project is also
 MIT-licensed, and is cited only as prior art in the research notes.
+
+## Approval gate and audit log
+
+A card click is a request, never approval. Every click is written to an
+append-only, hash-chained audit log in the plugin data directory
+(`audit/actions.jsonl`). The gate classifies each click fail-closed: it needs
+confirmation unless the action context says `read_only: true` and nothing in the
+event name, context, or stored surface points at a side effect (verbs such as
+deploy, merge, send, delete always gate). A gated click waits as
+`pending_confirmation`; only the user's own short typed `yes` in chat, after the
+pending notice was shown, makes it `approved` (single-use, 10 minute expiry,
+session-scoped). While one is pending, `pre_tool_call` vetoes every tool except
+`a2ui_render` and a few read-only helpers. `a2ui_render op=update` rejects
+`action_outcome=done|failed` without an approval, and `op=audit` (or
+`GET /audit`) returns the log. The card shows the status from the server, never
+from the click. Limits: the gate cannot see what a tool does outside Hermes, and
+the card text itself is still model-authored.

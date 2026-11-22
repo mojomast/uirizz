@@ -181,4 +181,95 @@ describe('SurfaceCard', () => {
     expect(body.context).toEqual({ name: 'Ada' })
     expect(JSON.stringify(post[1].headers || {}).toLowerCase()).not.toContain('authorization')
   })
+
+  function gateCtx(auditStatuses, actionResponse) {
+    const calls = []
+    const intervals = []
+    let auditIndex = 0
+    const surface = {
+      ok: true,
+      surface_id: 'demo',
+      revision: 1,
+      messages: [{ version: '1.0', createSurface: { surfaceId: 'demo' } }],
+    }
+    const ctx = {
+      rest: vi.fn(async (path, init = {}) => {
+        calls.push({ path, init })
+        if (path.startsWith('/surfaces/')) return surface
+        if (path === '/actions') return actionResponse
+        if (path.startsWith('/audit')) {
+          const status = auditStatuses[Math.min(auditIndex, auditStatuses.length - 1)]
+          auditIndex += 1
+          return { ok: true, actions: [{ action_id: 'act-1', status }] }
+        }
+        return { ok: true }
+      }),
+      setInterval: (fn) => {
+        intervals.push(fn)
+        return 1
+      },
+      clearInterval: vi.fn(),
+    }
+    return { ctx, calls, intervals }
+  }
+
+  async function clickDeploy(ctx) {
+    const utils = render(
+      jsx(SurfaceCard, {
+        file: { path: '/never-open' },
+        args: { surface_id: 'demo' },
+        result: { surface_id: 'demo' },
+        sessionId: 'sess-1',
+        fallback: null,
+        ctx,
+      }),
+    )
+    await waitFor(() => expect(MessageProcessor._instances[0]).toBeTruthy())
+    await act(async () => {
+      await MessageProcessor._instances[0].actionHandler({
+        name: 'deploy',
+        surfaceId: 'demo',
+        sourceComponentId: 'btn',
+        timestamp: '2026-11-22T14:00:00.000Z',
+        context: { side_effect: true },
+      })
+    })
+    return utils
+  }
+
+  it('shows a waiting notice after a gated click and never shows approval from the click itself', async () => {
+    const { ctx } = gateCtx(['pending_confirmation'], {
+      ok: true,
+      action_id: 'act-1',
+      requires_confirmation: true,
+      status: 'pending_confirmation',
+      approved: false,
+    })
+    const { container } = await clickDeploy(ctx)
+    await waitFor(() =>
+      expect(container.querySelector('[data-uirizz-gate="pending_confirmation"]')).toBeTruthy(),
+    )
+    const notice = container.querySelector('[data-uirizz-gate]')
+    expect(notice.textContent).toContain('Clicking is not approval')
+    expect(container.querySelector('[data-uirizz-gate="approved"]')).toBeNull()
+  })
+
+  it('follows the server-side status from the audit log and shows no notice for plain clicks', async () => {
+    const { ctx, intervals } = gateCtx(['approved'], {
+      ok: true,
+      action_id: 'act-1',
+      requires_confirmation: true,
+      status: 'pending_confirmation',
+    })
+    const { container } = await clickDeploy(ctx)
+    await act(async () => {
+      intervals[0]()
+    })
+    await waitFor(() => expect(container.querySelector('[data-uirizz-gate="approved"]')).toBeTruthy())
+
+    MessageProcessor._instances.length = 0
+    const plain = gateCtx(['approved'], { ok: true, action_id: 'act-2', requires_confirmation: false })
+    const second = await clickDeploy(plain.ctx)
+    expect(second.container.querySelectorAll('[data-uirizz-gate]').length).toBe(0)
+  })
 })

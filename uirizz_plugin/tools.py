@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from uirizz_plugin import express as express_mod
+from uirizz_plugin import gate
 from uirizz_plugin.catalog import (
     BASIC_CATALOG_ID,
     BASIC_COMPONENTS,
@@ -23,6 +24,7 @@ from uirizz_plugin.store import (
     _surfaces_dir,
 )
 from uirizz_plugin.validate import AdmissionError, admit_jsonl
+from uirizz_plugin.gate import GateError
 
 TOOLSET = "uirizz"
 TOOL_NAME = "a2ui_render"
@@ -58,12 +60,13 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
         "properties": {
             "op": {
                 "type": "string",
-                "enum": ["present", "update", "delete", "describe"],
+                "enum": ["present", "update", "delete", "describe", "audit"],
                 "description": (
                     "present: create a surface (new surface_id if omitted). "
                     "update: patch an existing surface_id in place. "
                     "delete: remove a surface_id. "
-                    "describe: return catalog, limits, and policy."
+                    "describe: return catalog, limits, and policy. "
+                    "audit: return the logged card actions (optional surface_id, limit)."
                 ),
             },
             "surface_id": {
@@ -81,6 +84,22 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
             "fallback_text": {
                 "type": "string",
                 "description": "Required plain-text copy of the surface for non-Desktop clients.",
+            },
+            "action_id": {
+                "type": "string",
+                "description": "With op=update: the action_id from an action notice you are reporting on.",
+            },
+            "action_outcome": {
+                "type": "string",
+                "enum": ["done", "failed", "cancelled"],
+                "description": (
+                    "With action_id: done or failed need the user's typed yes (status approved); "
+                    "the call is rejected otherwise. cancelled is always allowed."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "description": "With op=audit: how many recent actions to return (max 200).",
             },
         },
         "required": ["op"],
@@ -139,6 +158,16 @@ def describe_payload() -> dict[str, Any]:
             "present": "implemented",
             "update": "implemented",
             "delete": "implemented",
+            "audit": "implemented",
+        },
+        "approval_gate": {
+            "click_is_approval": False,
+            "approval_source": "the user's typed yes in chat, after the pending notice was shown",
+            "mark_side_effects": "put side_effect=true in the action context; unmarked and verb-matching clicks are gated too",
+            "read_only": "put read_only=true in the action context for purely visual clicks",
+            "ttl_seconds": gate.APPROVAL_TTL_S,
+            "tools_allowed_while_pending": sorted(gate.SAFE_TOOLS_WHILE_PENDING),
+            "report": "op=update with action_id and action_outcome=done|failed|cancelled",
         },
         "layout": {
             "default": "Weighted Row/Column children fill the card width; no grid.",
@@ -153,7 +182,7 @@ def describe_payload() -> dict[str, Any]:
     }
 
 
-def _fail(exc: AdmissionError | StoreError) -> str:
+def _fail(exc: AdmissionError | StoreError | GateError) -> str:
     return _error(exc.code, exc.error, exc.fix)
 
 
@@ -299,6 +328,12 @@ def _op_update(payload: dict[str, Any]) -> str:
     fallback = _require_fallback(payload, required=False) or existing["fallback_text"]
     jsonl = _jsonl_from_args(payload)
     admitted = admit_jsonl(jsonl, require_root=False)
+    # Fail-closed: reporting a side effect as done needs a live user approval.
+    # Checked before anything is stored, so a rejected report changes nothing.
+    action_id = payload.get("action_id")
+    action_outcome = payload.get("action_outcome")
+    if action_id is not None or action_outcome is not None:
+        gate.complete_action(action_id, action_outcome)
     record = {
         "surface_id": surface_id,
         "revision": int(existing.get("revision", 1)) + 1,
@@ -335,10 +370,17 @@ def handle_a2ui_render(args: dict | None) -> str:
             return _error(
                 "invalid_op",
                 "Missing or invalid op.",
-                "Set op to present, update, delete, or describe.",
+                "Set op to present, update, delete, describe, or audit.",
             )
         if op == "describe":
             return _dumps(describe_payload())
+        if op == "audit":
+            return _dumps(
+                gate.audit_view(
+                    surface_id=payload.get("surface_id") if isinstance(payload.get("surface_id"), str) else None,
+                    limit=payload.get("limit"),
+                )
+            )
         try:
             if op == "present":
                 return _op_present(payload)
@@ -346,7 +388,7 @@ def handle_a2ui_render(args: dict | None) -> str:
                 return _op_update(payload)
             if op == "delete":
                 return _op_delete(payload)
-        except (AdmissionError, StoreError) as exc:
+        except (AdmissionError, StoreError, GateError) as exc:
             return _fail(exc)
         return _error(
             "invalid_op",

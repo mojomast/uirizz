@@ -8,14 +8,16 @@ import pytest
 
 from uirizz_plugin.catalog import BASIC_CATALOG_ID, LIMITS
 from uirizz_plugin.store import get_surface, set_store_dir
-from uirizz_plugin.tools import handle_a2ui_render
+from uirizz_plugin.tools import handle_a2ui_render, parse_tool_result
 from uirizz_plugin.urls import validate_https_public_url
 
 
 def _load(result: str) -> dict:
     assert isinstance(result, str)
-    body = json.loads(result)
-    assert isinstance(body, dict)
+    body = parse_tool_result(result)
+    if body.get("ok") is True and "media" in body:
+        assert "\nMEDIA: " in result
+        assert result.strip().endswith(body["media"])
     return body
 
 

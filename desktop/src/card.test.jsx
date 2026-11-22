@@ -172,7 +172,9 @@ describe('SurfaceCard', () => {
     const post = ctx.rest.mock.calls.find((c) => c[0] === '/actions')
     expect(post).toBeTruthy()
     expect(post[1].method).toBe('POST')
-    const body = JSON.parse(post[1].body)
+    // ctx.rest serialises the body itself: it must be an object, not a JSON string.
+    expect(typeof post[1].body).toBe('object')
+    const body = post[1].body
     expect(body.event).toBe('submit')
     expect(body.session_id).toBe('sess-1')
     expect(body.surface_id).toBe('demo')

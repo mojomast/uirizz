@@ -6,7 +6,9 @@ export async function restJson(ctx, path, options = {}) {
   }
   const init = { method: options.method || 'GET' }
   if (options.body !== undefined) {
-    init.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
+    // The host's ctx.rest serialises the body itself; pre-stringifying double-encodes
+    // it and the server answers 422 ("Input should be a valid dictionary").
+    init.body = options.body
     init.headers = { 'content-type': 'application/json' }
   }
   const response = await ctx.rest(path, init)

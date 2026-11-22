@@ -311,3 +311,196 @@ another `hermes-a2ui`.
 - [W3C Using ARIA](https://www.w3.org/TR/using-aria/)
 - Catalog PRs [hermes-a2ui #151841](https://github.com/NousResearch/hermes-agent/pull/151841) and [hermes-openui #151842](https://github.com/NousResearch/hermes-agent/pull/151842)
 - Competitor tree (read-only, MIT): [packages/a2ui @ 98d3f29](https://github.com/Revenue-Architect/hermes-kaizen-ui/tree/98d3f29337e9ab2b1651e047914d7363f89782c9/packages/a2ui)
+
+## 10. Layout best practice
+
+Researched 22 November 2026 for the advanced-layout pass. Every claim below
+cites a page that was open that day. Items marked **(uirizz)** were checked
+against the live Desktop renderer on Hermes v0.23.0.
+
+### 10.1 Compose with Row, Column and `weight`; do not expect a grid
+
+- The Basic Catalog has no grid. A grid is `Column` of `Row`s, or `Row` of
+  `Column`s ([component reference](https://github.com/a2ui-project/a2ui/blob/main/docs/public/reference/components.md),
+  [Basic Catalog guide](https://a2ui.org/specification/v1.0-basic-catalog-implementation-guide/)).
+- `weight` is the CSS `flex-grow` analogue and is only legal on a **direct
+  child** of a `Row` or `Column` ([Basic Catalog guide](https://a2ui.org/specification/v1.0-basic-catalog-implementation-guide/),
+  [Android `A2uiBasicCatalogV1` reference](https://developer.android.com/reference/kotlin/androidx/a2ui/compose/ui/catalog/A2uiBasicCatalogV1)).
+  A `Row` of `Card(..., weight=1)` makes equal-width KPI tiles; `weight=2` next
+  to `weight=3` gives a 2:3 master/detail split. Without weights, children
+  shrink to content and a "wide" surface looks narrow **(uirizz)**.
+- Spacing multiplication: invisible containers (`Row`, `Column`, `List`) carry
+  zero padding and margin; leaves and bordered containers (`Text`, `Image`,
+  `Card`, `Button`, inputs) carry the margin. Nest rows and columns freely
+  without extra spacers ([Basic Catalog guide, Layout Spacing](https://a2ui.org/specification/v1.0-basic-catalog-implementation-guide/)).
+- `justify` (main axis) and `align` (cross axis) default to `start`; use
+  `spaceBetween` plus `align=center` for toolbars and label/value rows
+  ([component reference](https://github.com/a2ui-project/a2ui/blob/main/docs/public/reference/components.md)).
+
+### 10.2 Density and hierarchy: replace markdown with structure
+
+Google's contributed `enterprise_dashboard` write-up (closed unmerged, so cite
+it as community practice, not spec) gives a data-type to component recipe
+that matches what the official catalog is good at
+([a2ui-project/a2ui #1467](https://github.com/a2ui-project/a2ui/pull/1467)):
+
+| Data | Use |
+|---|---|
+| KPI metrics | `Row` of `Card`, one bold `Text` plus a caption each |
+| Comparisons | `Row` of `Card` side by side |
+| Rankings | `List` of `Card` or `Row` |
+| Multi-section | `Tabs` |
+| Separators | `Divider` |
+| Status | `Icon` (`check`, `warning`, `error`) |
+
+The same write-up reports that anti-markdown rules in the prompt cut the
+rate of markdown fallbacks from roughly 30-40% to under 5% on its own
+agents; treat that as an author-reported number. The takeaway for the uirizz
+skill is to say plainly: structured data goes in components, prose goes in
+the chat reply.
+
+### 10.3 When to use Tabs, Modal, List, and when to go bigger
+
+- **Inline card (host guidance):** one decision or a small structured result;
+  OpenAI recommends no tabs, no deep navigation and no nested scrolling inside
+  an inline card, with at most one primary and one secondary action
+  ([OpenAI UI guidelines](https://developers.openai.com/plugins/concepts/ui-guidelines));
+  Claude's MCP Apps guide says the same and adds 4-5 data points at most
+  ([Claude design guidelines](https://claude.com/docs/connectors/building/mcp-apps/design-guidelines)).
+- **Carousel:** 3-8 comparable items, each with an image, a title and at most
+  three lines of metadata, one CTA per item (same two pages).
+- **Fullscreen / side panel:** dashboards, boards, editors; "use collapsible
+  sidebars, tabs, or pagination to disclose details" and avoid floating
+  panels ([Claude design guidelines](https://claude.com/docs/connectors/building/mcp-apps/design-guidelines)).
+  Lay out by **container width**, not by display mode.
+- **Implication for uirizz:** measured on the live Hermes Desktop (Webapp,
+  1500 px viewport, sidebar open, dark): the thread is 1240 px wide and the
+  rendered uirizz card is 1180 px, with no `max-width` anywhere in its
+  ancestor chain (`none` / `100%`). The plugin does not cap or column-force
+  the card; the host transcript column is the only limit. uirizz has no
+  fullscreen mode, so a surface is an *inline wide card*. Narrow-looking cards
+  seen earlier were an authoring problem (no `weight`, so every child shrank
+  to content), not a container limit. Use
+  `Tabs` only for peer views of one object (Summary / Timeline / Runbook),
+  never as navigation between tasks. Use `Modal` for a detail that would
+  otherwise need a second surface, with a visible trigger; both hosts warn
+  that menus and popovers clip, so prefer visible controls over dropdowns.
+  Use `List` for homogeneous rows and for template-driven rows from the data
+  model.
+
+### 10.4 Live data: update the data model, not the component tree
+
+- A2UI separates structure from state. `updateDataModel` upserts at a JSON
+  Pointer `path`; omitted path replaces the root; `value: null` deletes. Only
+  components bound to the changed path re-render
+  ([Data model and data binding](https://a2ui.org/concepts/data-binding/)).
+- Two-way inputs (`TextField`, `CheckBox`, `Slider`, `ChoicePicker`) write the
+  local model immediately and are **not** sent to the agent until an action
+  carries them in `context` (as `{"@path": "/form/x"}`) or the surface sets
+  `sendDataModel: true` ([Data model and data binding](https://a2ui.org/concepts/data-binding/)).
+- Lists can be template-driven: `children: {path, componentId}` repeats a
+  template per array item with relative paths; Express spells this
+  `_template($/items, rowTemplate)` ([Data model and data binding](https://a2ui.org/concepts/data-binding/),
+  `a2ui-agent-sdk` Express prompt contract, rule 11).
+- Streaming has replace semantics only; an append operation is a proposal,
+  not protocol ([discussion #727](https://github.com/a2ui-project/a2ui/discussions/727),
+  [discussion #1253](https://github.com/a2ui-project/a2ui/discussions/1253)).
+  Push whole arrays or small objects.
+- **(uirizz)** Consequence: a monitor, a wizard or a counter should be one
+  `present` with bound components, then `update` calls that carry only
+  `updateDataModel` JSONL. That is cheaper for the model than re-sending
+  components and refreshes the card in place.
+
+### 10.5 Where the other stacks sit
+
+- CopilotKit frames generative UI as controlled, declarative and open-ended;
+  A2UI is "declarative", "creativity inside a guardrail", and fits the long
+  tail of secondary interactions and internal enterprise tools
+  ([CopilotKit overview](https://docs.copilotkit.ai/agent-spec/concepts/generative-ui-overview),
+  [Generative UI spectrum](https://www.copilotkit.ai/generative-ui-spectrum)).
+- AG-UI is the bidirectional agent/app runtime, not a UI spec; it carries
+  A2UI, MCP-UI and Open-JSON-UI ([AG-UI generative UI specs](https://docs.ag-ui.com/concepts/generative-ui-specs)).
+- Vercel AI SDK renders a React component from a typed tool part
+  (`tool-<name>`, states `input-available` / `output-available`), i.e. a
+  *controlled* pattern: the app owns every component
+  ([AI SDK generative UI](https://ai-sdk.dev/docs/ai-sdk-ui/generative-user-interfaces)).
+  uirizz is the declarative counterpart: the model composes from the Basic
+  Catalog, the host owns every pixel.
+- MCP Apps / MCP-UI ship sandboxed HTML; a talk at AI Engineer estimates
+  predefined UI suits most cases, with declarative UI helping hosts keep a
+  consistent look ([MCP-UI talk](https://ai.engineer/talks/o-zkvb0iFDQ-mcp-ui-extending-frontier)).
+- Demos worth studying: restaurant finder (forms, time pickers, confirmation
+  flows), contact lookup (search form plus result list), the component
+  gallery and the Composer (live data-model, events and error panes)
+  ([google/A2UI quickstart](https://github.com/google/A2UI/blob/81783227/docs/quickstart.md),
+  [samples registry](https://github.com/google/A2UI/blob/main/samples/README.md),
+  [Composer](https://github.com/a2ui-project/a2ui/blob/main/docs/public/composer/index.md)).
+
+### 10.6 What the Basic Catalog cannot do (do not fake it)
+
+No `Chart`, `Table`, `Progress`, `Badge`, `Tag`, `Map`, `Code`, `Markdown`
+block, accordion, conditional visibility, or fullscreen mode. In the Hermes
+Desktop renderer the `Icon` component also draws its ligature **name as text**
+(for example `warning`, `lock_open`) because the Material Symbols font is not
+loaded there **(uirizz)**; use a text glyph (`✓`, `⚠`) until that is fixed. Workarounds
+that stay honest: `Slider` for a read-only progress bar, `Row`s of `Text` for
+a table, `Icon` plus caption for status, `Tabs` or a swapped `updateComponents`
+for stepwise flows. `Video` and `AudioPlayer` exist in the catalog but uirizz
+admission rejects them for now.
+
+### 10.7 Authoring rules this implies for the uirizz skill
+
+1. Wrap the whole surface in a `Column`; split wide content with a `Row` and
+   give each child a `weight`.
+2. KPI row: 3-5 `Card`s, `weight=1`, label caption over value.
+3. Master/detail: left `Column` or `Card` `weight=2`, right `weight=3`.
+4. Keep one primary `Button` per card region; put per-row actions in the row,
+   `borderless`.
+5. Bind anything that changes to the data model and update with
+   `updateDataModel`; resend components only when structure changes.
+6. Stay under the 100-component and 256 KiB caps; template lists for repeats.
+7. Always send a plain-text `fallback_text` that carries the same numbers.
+
+### 10.8 Sources opened for this section
+
+- [A2UI v1.0 Basic Catalog guide](https://a2ui.org/specification/v1.0-basic-catalog-implementation-guide/)
+- [A2UI components reference](https://github.com/a2ui-project/a2ui/blob/main/docs/public/reference/components.md)
+- [A2UI data model and data binding](https://a2ui.org/concepts/data-binding/)
+- [A2UI discussion #727](https://github.com/a2ui-project/a2ui/discussions/727), [#1253](https://github.com/a2ui-project/a2ui/discussions/1253)
+- [A2UI PR #1467 enterprise_dashboard](https://github.com/a2ui-project/a2ui/pull/1467) (closed, not merged)
+- [google/A2UI samples](https://github.com/google/A2UI/blob/main/samples/README.md), [quickstart](https://github.com/google/A2UI/blob/81783227/docs/quickstart.md), [Composer](https://github.com/a2ui-project/a2ui/blob/main/docs/public/composer/index.md)
+- [OpenAI UI guidelines](https://developers.openai.com/plugins/concepts/ui-guidelines), [Apps SDK UI](https://developers.openai.com/plugins/build/chatgpt-ui)
+- [Claude MCP Apps design guidelines](https://claude.com/docs/connectors/building/mcp-apps/design-guidelines)
+- [CopilotKit generative UI](https://docs.copilotkit.ai/agent-spec/concepts/generative-ui-overview), [spectrum](https://www.copilotkit.ai/generative-ui-spectrum)
+- [AG-UI generative UI specs](https://docs.ag-ui.com/concepts/generative-ui-specs)
+- [Vercel AI SDK generative UI](https://ai-sdk.dev/docs/ai-sdk-ui/generative-user-interfaces)
+- [MCP-UI talk, AI Engineer](https://ai.engineer/talks/o-zkvb0iFDQ-mcp-ui-extending-frontier)
+
+### 10.9 Verified live on Hermes Desktop (v0.23.0, dark mode)
+
+Four Express demos run end to end through the real `a2ui_render` tool, using
+only Basic Catalog components (`Row`, `Column`, `Card`, `Text`, `Button`,
+`Tabs`, `List` with `_template`, `Divider`, `Slider`, `TextField`,
+`ChoicePicker`, `CheckBox`, `formatString`):
+
+- The card container is not capped: at a 1500 px viewport the thread is
+  1240 px and the card 1180 px, with no `max-width` in the ancestor chain. A
+  card that looks narrow is an authoring problem (no `weight`), not a renderer
+  limit.
+- `weight` works on `Row` and `Column` children: a 4-up KPI row, a 2:3
+  list/detail split and a 4-column board all lay out as specified.
+- `Tabs` switch client-side with no model round trip; tab selection survived a
+  later `updateComponents` on the same surface.
+- Re-sending a same-structure tree to the same `surface_id` refreshes the
+  already-rendered cards in place, including cards from earlier turns, so a
+  thread shows the latest state everywhere.
+- `updateDataModel`-only updates (raw JSONL) moved a monitor card through four
+  revisions with no component resend.
+- `TextField`, `ChoicePicker` and `CheckBox` write to the data model on the
+  client, so a `formatString` summary pane updates as the user types; the
+  `Event` context carried the current values to the agent.
+
+Known renderer issues seen: `Icon` names render as literal ligature text
+(Material Symbols font not loaded), so use glyph `Text`; `Slider` with a
+non-zero `min` (1..12) drew its thumb at the left edge for value 3 (not
+root-caused). Neither is a uirizz bug.

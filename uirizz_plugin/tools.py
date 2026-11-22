@@ -36,6 +36,7 @@ __all__ = [
     "MVP_COMPONENTS",
     "TOOL_NAME",
     "handle_a2ui_render",
+    "parse_tool_result",
     "register_tools",
 ]
 
@@ -178,6 +179,16 @@ def _jsonl_from_args(payload: dict[str, Any]) -> str:
     return jsonl
 
 
+def parse_tool_result(result: str) -> dict[str, Any]:
+    """Parse the JSON object at the start of a tool result, ignoring a trailing MEDIA line."""
+    if not isinstance(result, str):
+        raise TypeError("tool result must be a string")
+    obj, _end = json.JSONDecoder().raw_decode(result.lstrip())
+    if not isinstance(obj, dict):
+        raise ValueError("tool result JSON must be an object")
+    return obj
+
+
 def _write_media(surface_id: str, fallback_text: str) -> str:
     path = _surfaces_dir() / f"{surface_id}.md"
     path.write_text(fallback_text.rstrip() + "\n", encoding="utf-8")
@@ -186,7 +197,8 @@ def _write_media(surface_id: str, fallback_text: str) -> str:
 
 def _success(op: str, record: dict[str, Any]) -> str:
     media_path = _write_media(record["surface_id"], record["fallback_text"])
-    return _dumps(
+    media_tag = f"MEDIA: {media_path}"
+    body = _dumps(
         {
             "ok": True,
             "op": op,
@@ -194,9 +206,13 @@ def _success(op: str, record: dict[str, Any]) -> str:
             "revision": record["revision"],
             "fallback_text": record["fallback_text"],
             "component_count": record.get("component_count", 0),
-            "media": f"MEDIA: {media_path}",
+            "media": media_tag,
         }
     )
+    # Desktop only mounts a tool-media renderer when a standalone MEDIA: line
+    # appears in the tool result (and then in the transcript). A JSON field
+    # alone is not enough.
+    return body + "\n" + media_tag + "\n"
 
 
 def _op_present(payload: dict[str, Any]) -> str:

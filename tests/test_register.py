@@ -51,7 +51,7 @@ def test_pre_llm_call_accepts_kwargs():
 
 def test_every_op_returns_json_string(tmp_path):
     from uirizz_plugin.store import set_store_dir
-    from uirizz_plugin.tools import handle_a2ui_render
+    from uirizz_plugin.tools import handle_a2ui_render, parse_tool_result
 
     set_store_dir(tmp_path)
     golden = (
@@ -71,7 +71,7 @@ def test_every_op_returns_json_string(tmp_path):
     for args in cases:
         result = handle_a2ui_render(args)  # type: ignore[arg-type]
         assert isinstance(result, str), args
-        body = json.loads(result)
+        body = parse_tool_result(result)
         assert isinstance(body, dict)
         assert "ok" in body
         if args == {"op": "describe"}:

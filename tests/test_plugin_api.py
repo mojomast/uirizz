@@ -66,3 +66,26 @@ def test_dashboard_router_exports_surface_route():
     for route in getattr(router, "routes", []):
         paths.append(getattr(route, "path", None))
     assert any(p and "surfaces" in p for p in paths)
+
+
+def test_post_action_is_recorded_for_the_session():
+    from dashboard.plugin_api import _record_action
+    from uirizz_plugin.hooks import pre_llm_call
+
+    body = _record_action(
+        {
+            "surface_id": "demo",
+            "session_id": "sess-1",
+            "event": "ok",
+            "context": {"n": 1},
+        }
+    )
+    assert body["ok"] is True
+    result = pre_llm_call(session_id="sess-1")
+    text = result if isinstance(result, str) else result["context"]
+    assert "surface_id=" in text
+    assert "demo" in text
+    assert "ok" in text
+    missing = _record_action({"surface_id": "demo", "event": "ok"})
+    assert missing["ok"] is False
+    assert missing["code"] == "invalid_payload"

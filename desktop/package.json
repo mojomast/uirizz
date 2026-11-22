@@ -1,0 +1,34 @@
+{
+  "name": "uirizz-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Hermes Desktop/Webapp card for uirizz. Build output is desktop/plugin.js.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "check-bundle": "node scripts/build.mjs --check"
+  },
+  "dependencies": {
+    "@a2ui/markdown-it": "^0.2.2",
+    "@a2ui/react": "^0.15.0",
+    "@a2ui/web_core": "^0.15.0",
+    "zod": "^3.25.76",
+    "react-dom": "^19.1.0"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -217,6 +217,38 @@ def _success(op: str, record: dict[str, Any]) -> str:
     return body + "\n" + media_tag + "\n"
 
 
+def _rebind(messages: list[dict[str, Any]], surface_id: str, *, update: bool) -> list[dict[str, Any]]:
+    """Point every envelope at the stored surface_id.
+
+    Express always names its surface "main". The card looks a surface up by the
+    id the tool returned, and an update must patch that surface rather than
+    create a second one, so createSurface becomes updateComponents on update.
+    """
+    out: list[dict[str, Any]] = []
+    for message in messages:
+        env = dict(message)
+        for key in ("createSurface", "updateComponents", "updateDataModel", "deleteSurface"):
+            body = env.get(key)
+            if isinstance(body, dict):
+                body = dict(body)
+                body["surfaceId"] = surface_id
+                env[key] = body
+        create = env.get("createSurface")
+        if update and isinstance(create, dict):
+            env.pop("createSurface")
+            comps = create.get("components")
+            if comps:
+                env["updateComponents"] = {"surfaceId": surface_id, "components": comps}
+            data = create.get("dataModel")
+            if data:
+                out.append({"version": env.get("version", "1.0"),
+                            "updateDataModel": {"surfaceId": surface_id, "value": data}})
+            if "updateComponents" not in env:
+                continue
+        out.append(env)
+    return out
+
+
 def _op_present(payload: dict[str, Any]) -> str:
     fallback = _require_fallback(payload, required=True)
     assert fallback is not None
@@ -237,7 +269,7 @@ def _op_present(payload: dict[str, Any]) -> str:
         "surface_id": surface_id,
         "revision": 1,
         "fallback_text": fallback,
-        "messages": admitted["messages"],
+        "messages": _rebind(admitted["messages"], surface_id, update=False),
         "component_count": admitted["component_count"],
         "component_ids": admitted["component_ids"],
     }
@@ -261,7 +293,8 @@ def _op_update(payload: dict[str, Any]) -> str:
         "surface_id": surface_id,
         "revision": int(existing.get("revision", 1)) + 1,
         "fallback_text": fallback,
-        "messages": list(existing.get("messages") or []) + admitted["messages"],
+        "messages": list(existing.get("messages") or [])
+        + _rebind(admitted["messages"], surface_id, update=True),
         "component_count": admitted["component_count"] or existing.get("component_count", 0),
         "component_ids": admitted["component_ids"] or existing.get("component_ids", []),
     }

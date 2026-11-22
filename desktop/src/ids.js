@@ -6,8 +6,11 @@ export function parseResult(result) {
   if (typeof result === 'string') {
     const text = result.trim()
     if (!text) return null
+    // The tool result is a JSON object, then a standalone MEDIA: line.
+    const cut = text.search(/\n\s*MEDIA:/)
+    const body = cut > 0 ? text.slice(0, cut) : text
     try {
-      const parsed = JSON.parse(text)
+      const parsed = JSON.parse(body)
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
     } catch {
       return null

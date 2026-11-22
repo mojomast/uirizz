@@ -30,7 +30,7 @@ def _express_error(exc: BaseException) -> AdmissionError:
 
 def _dump_message(message: Any) -> dict[str, Any]:
     if hasattr(message, "model_dump"):
-        dumped = message.model_dump(by_alias=True, mode="json")
+        dumped = message.model_dump(by_alias=True, mode="json", exclude_none=True)
         if isinstance(dumped, dict):
             return dumped
     if isinstance(message, dict):

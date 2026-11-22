@@ -27,5 +27,9 @@ function disabledOpenUrl() {
 export function catalogWithOpenUrlOff() {
   const replacement = disabledOpenUrl()
   if (!replacement) return basicCatalog
-  return basicCatalog.derive({ functions: [replacement] })
+  // withEntries keeps the catalog id; derive() would mint a catalog with no id,
+  // and createSurface then fails with "Catalog not found" (swallowed by
+  // reportErrorsOnly), leaving the card on "Loading surface".
+  const functions = [...basicCatalog.functions.values()].map((fn) => (fn.name === replacement.name ? replacement : fn))
+  return basicCatalog.withEntries([...basicCatalog.components.values()], functions)
 }

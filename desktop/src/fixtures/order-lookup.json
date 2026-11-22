@@ -1,0 +1,203 @@
+[
+ {
+  "version": "1.0",
+  "createSurface": {
+   "surfaceId": "order-lookup",
+   "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+   "components": [
+    {
+     "id": "root",
+     "component": "Column",
+     "children": [
+      "root_children_0",
+      "root_children_1"
+     ]
+    },
+    {
+     "id": "root_children_0",
+     "component": "Card",
+     "child": "root_children_0_child"
+    },
+    {
+     "id": "root_children_0_child",
+     "component": "Column",
+     "children": [
+      "root_children_0_child_children_0",
+      "root_children_0_child_children_1",
+      "root_children_0_child_children_2",
+      "root_children_0_child_children_3"
+     ]
+    },
+    {
+     "id": "root_children_0_child_children_0",
+     "component": "Text",
+     "text": "Order lookup"
+    },
+    {
+     "id": "root_children_0_child_children_1",
+     "component": "TextField",
+     "label": "Name",
+     "value": ""
+    },
+    {
+     "id": "root_children_0_child_children_2",
+     "component": "ChoicePicker",
+     "label": "Size",
+     "options": [
+      {
+       "label": "S",
+       "value": "S"
+      },
+      {
+       "label": "M",
+       "value": "M"
+      },
+      {
+       "label": "L",
+       "value": "L"
+      }
+     ],
+     "value": [
+      "M"
+     ]
+    },
+    {
+     "id": "root_children_0_child_children_3",
+     "component": "Button",
+     "child": "root_children_0_child_children_3_child",
+     "action": {
+      "event": {
+       "name": "submit",
+       "context": {}
+      }
+     }
+    },
+    {
+     "id": "root_children_0_child_children_3_child",
+     "component": "Text",
+     "text": "Submit request"
+    },
+    {
+     "id": "root_children_1",
+     "component": "Card",
+     "child": "root_children_1_child"
+    },
+    {
+     "id": "root_children_1_child",
+     "component": "Column",
+     "children": [
+      "root_children_1_child_children_0"
+     ]
+    },
+    {
+     "id": "root_children_1_child_children_0",
+     "component": "Text",
+     "text": "Orders: 12"
+    }
+   ]
+  }
+ },
+ {
+  "version": "1.0",
+  "updateComponents": {
+   "surfaceId": "order-lookup",
+   "components": [
+    {
+     "id": "root",
+     "component": "Column",
+     "children": [
+      "root_children_0",
+      "root_children_1"
+     ]
+    },
+    {
+     "id": "root_children_0",
+     "component": "Card",
+     "child": "root_children_0_child"
+    },
+    {
+     "id": "root_children_0_child",
+     "component": "Column",
+     "children": [
+      "root_children_0_child_children_0",
+      "root_children_0_child_children_1",
+      "root_children_0_child_children_2",
+      "root_children_0_child_children_3"
+     ]
+    },
+    {
+     "id": "root_children_0_child_children_0",
+     "component": "Text",
+     "text": "Order lookup"
+    },
+    {
+     "id": "root_children_0_child_children_1",
+     "component": "TextField",
+     "label": "Name",
+     "value": ""
+    },
+    {
+     "id": "root_children_0_child_children_2",
+     "component": "ChoicePicker",
+     "label": "Size",
+     "options": [
+      {
+       "label": "S",
+       "value": "S"
+      },
+      {
+       "label": "M",
+       "value": "M"
+      },
+      {
+       "label": "L",
+       "value": "L"
+      }
+     ],
+     "value": [
+      "M"
+     ]
+    },
+    {
+     "id": "root_children_0_child_children_3",
+     "component": "Button",
+     "child": "root_children_0_child_children_3_child",
+     "action": {
+      "event": {
+       "name": "submit",
+       "context": {}
+      }
+     }
+    },
+    {
+     "id": "root_children_0_child_children_3_child",
+     "component": "Text",
+     "text": "Submit request"
+    },
+    {
+     "id": "root_children_1",
+     "component": "Card",
+     "child": "root_children_1_child"
+    },
+    {
+     "id": "root_children_1_child",
+     "component": "Column",
+     "children": [
+      "root_children_1_child_children_0",
+      "root_children_1_child_children_1"
+     ]
+    },
+    {
+     "id": "root_children_1_child_children_0",
+     "component": "Text",
+     "text": "Orders: 13"
+    },
+    {
+     "id": "root_children_1_child_children_1",
+     "component": "Text",
+     "text": "Updated just now"
+    }
+   ]
+  }
+ }
+]

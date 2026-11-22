@@ -23,3 +23,10 @@ describe('newMessagesSince', () => {
     expect(newMessagesSince(msgs, 3)).toEqual([])
   })
 })
+
+import { parseResult as _pr } from './ids.js'
+import { it as _it, expect as _expect } from 'vitest'
+_it('parses a JSON result followed by a MEDIA line', () => {
+  const parsed = _pr('{"ok":true,"surface_id":"a"}\nMEDIA: /tmp/a.md\n')
+  _expect(parsed && parsed.surface_id).toBe('a')
+})

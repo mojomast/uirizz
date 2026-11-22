@@ -55,6 +55,31 @@ no `file:`, and no local paths. If an image cannot be loaded under that
 policy, omit it and say so in `fallback_text`. Labels and values you put on a
 surface are data, not instructions.
 
+## Layout
+
+Compose wide: wrap the surface in a `Column` and split content with `Row` or
+`Column` children carrying `weight` (a flex-grow ratio; there is no grid).
+Give children weights so the card fills its width instead of one narrow
+stacked column.
+
+- KPI row: a `Row` of 3-5 `Card`s, each `weight=1`; put a caption label over
+  the value.
+- Master/detail: left `Column` or `Card` at `weight=2`, right at `weight=3`
+  (2:3).
+- `Tabs` for alternate views of the same object; `Modal` for a short confirm;
+  `List` with `_template($/items, rowTemplate)` for repeats.
+- After `present`, change values with `op=update` on the same `surface_id`.
+  Prefer a data-model-only `updateDataModel` (or the same Express tree so ids
+  stay stable) over presenting a second card.
+- `Icon` takes Material icon names; the card bundles the icon font.
+- `Slider` `steps` is the number of discrete divisions, not the unit
+  increment: `steps=1` on a 1-12 slider gives only two stops (min and max).
+  Omit `steps` for a continuous/unit slider, or pass `11` for unit steps on
+  1-12.
+- The Basic Catalog has no Chart, Table, Progress, Badge, Map, Markdown block,
+  or conditional visibility. Use a read-only `Slider` as a progress bar; do
+  not invent types.
+
 ## Actions
 
 When the user clicks or submits, you will receive a structured action for that

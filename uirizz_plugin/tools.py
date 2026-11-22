@@ -48,7 +48,8 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
         "result's MEDIA: line alone on its own line into your reply: Desktop "
         "and Webapp draw the card from it; CLI, Telegram, and the classic "
         "dashboard show fallback_text only. Call op=describe for the catalog, limits, and "
-        "media policy. Prefer Express; otherwise send v1.0 JSONL. Reuse "
+        "media policy. Prefer Express; otherwise send v1.0 JSONL. Use weighted "
+        "Row/Column layouts by default. Reuse "
         "surface_id with op=update instead of creating a new card. Never pass "
         "local file paths or http/data image URLs."
     ),
@@ -138,6 +139,15 @@ def describe_payload() -> dict[str, Any]:
             "present": "implemented",
             "update": "implemented",
             "delete": "implemented",
+        },
+        "layout": {
+            "default": "Weighted Row/Column children fill the card width; no grid.",
+            "kpi": "Row of 3-5 Cards, weight=1, caption over value.",
+            "master_detail": "weight=2 left, weight=3 right.",
+            "views": "Tabs for alternate views, Modal for a short confirm, List with _template for repeats.",
+            "updates": "op=update on the same surface_id; prefer data-model-only updateDataModel over a new card.",
+            "icons": "Icon takes Material icon names; the font is bundled.",
+            "slider_steps": "steps is divisions, not the increment (steps=1 on 1-12 = two stops).",
         },
         "theme": "night-hive",
     }

@@ -43,6 +43,7 @@ const options = {
   minify: true,
   sourcemap: false,
   legalComments: 'none',
+  loader: { '.woff2': 'dataurl' },
   logLevel: 'info',
   banner: { js: banner },
 }

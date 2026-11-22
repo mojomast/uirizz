@@ -4,6 +4,7 @@ import * as sdk from '@hermes/plugin-sdk'
 import { jsx } from 'react/jsx-runtime'
 import { renderMarkdown } from '@a2ui/markdown-it'
 import { injectBasicCatalogStyles, setMarkdownRenderer } from '@a2ui/web_core/v1_0'
+import { installIconFont } from './icon-font.js'
 import { SurfaceCard } from './card.jsx'
 
 export default {
@@ -21,6 +22,11 @@ export default {
         injectBasicCatalogStyles(document)
       } catch {
         // Official styles are best-effort.
+      }
+      try {
+        installIconFont(document)
+      } catch {
+        // The icon font is best-effort; text still renders.
       }
     }
 

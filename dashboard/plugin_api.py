@@ -44,13 +44,26 @@ def _record_action(body: dict[str, Any]) -> dict[str, Any]:
         session_id=session_id,
         event=event,
         context=body.get("context") or {},
+        source_component_id=body.get("source_component_id"),
+        client_timestamp=body.get("timestamp"),
     )
     return {
         "ok": True,
         "surface_id": rec["surface_id"],
         "event": rec["event"],
         "session_id": rec["session_id"],
+        "action_id": rec["action_id"],
+        "requires_confirmation": rec["requires_confirmation"],
+        "status": rec["status"],
+        # A click never approves anything. The user's typed yes in chat does.
+        "approved": False,
     }
+
+
+def _audit(surface_id: str | None, session_id: str | None, limit: int | None) -> dict[str, Any]:
+    from uirizz_plugin.gate import audit_view
+
+    return audit_view(session_id=session_id, surface_id=surface_id, limit=limit)
 
 
 if APIRouter is not None:
@@ -62,7 +75,25 @@ if APIRouter is not None:
 
     @router.post("/actions")
     def post_action(body: dict[str, Any]) -> dict[str, Any]:
-        return _record_action(body)
+        try:
+            return _record_action(body)
+        except Exception:  # noqa: BLE001 — fail closed; nothing was approved
+            return {
+                "ok": False,
+                "code": "record_failed",
+                "error": "The action could not be logged, so it was not accepted.",
+                "fix": "Retry the click.",
+                "approved": False,
+            }
+
+    @router.get("/audit")
+    def get_audit(
+        surface_id: str | None = None, session_id: str | None = None, limit: int | None = None
+    ) -> dict[str, Any]:
+        try:
+            return _audit(surface_id, session_id, limit)
+        except Exception:  # noqa: BLE001
+            return {"ok": False, "code": "audit_unavailable", "error": "The audit log could not be read.", "fix": "Check the plugin data directory."}
 
 else:
 
@@ -71,6 +102,7 @@ else:
             self.routes = [
                 SimpleNamespace(path="/surfaces/{surface_id}"),
                 SimpleNamespace(path="/actions"),
+                SimpleNamespace(path="/audit"),
             ]
 
     router = _FallbackRouter()

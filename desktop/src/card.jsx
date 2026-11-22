@@ -8,6 +8,19 @@ import { restJson } from './rest.js'
 
 const POLL_MS = 4000
 
+// A click is a request, never approval. The host (not the model) tells the
+// user what is still waiting, using the plugin's audit log.
+const GATE_COPY = {
+  pending_confirmation: 'Waiting for your yes in chat. Clicking is not approval.',
+  approved: 'Approved by your reply in chat.',
+  denied: 'Cancelled. You said no.',
+  expired: 'Request expired. Click again to retry.',
+  superseded: 'Replaced by a newer click.',
+  completed: 'Done. Logged in the audit log.',
+  failed: 'Failed. Logged in the audit log.',
+  cancelled: 'Cancelled. Logged in the audit log.',
+}
+
 function lookUpSurfaceId(args, result) {
   return surfaceIdFrom(args, result)
 }
@@ -20,6 +33,8 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
   const [loadError, setLoadError] = useState(null)
   const processed = useRef(0)
   const processorRef = useRef(null)
+  const [gateStatus, setGateStatus] = useState(null)
+  const gateIdRef = useRef(null)
 
   const processor = useMemo(() => {
     if (!surfaceId) return null
@@ -37,6 +52,13 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
             source_component_id: action.sourceComponentId,
             timestamp: action.timestamp,
           },
+        }).then((res) => {
+          // Only the server decides whether a click needs confirmation, and the
+          // card never marks anything approved.
+          if (res && res.ok !== false && res.requires_confirmation && typeof res.action_id === 'string') {
+            gateIdRef.current = res.action_id
+            setGateStatus('pending_confirmation')
+          }
         })
       },
       { version: '1.0', reportErrorsOnly: true },
@@ -107,6 +129,21 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
         apply(body)
       } catch {
         if (!cancelled) setLoadError('rest_error')
+      }
+      const gateId = gateIdRef.current
+      if (!gateId) return
+      try {
+        const audit = await restJson(
+          ctx,
+          `/audit?surface_id=${encodeURIComponent(surfaceId)}&limit=20`,
+        )
+        const entry =
+          audit && Array.isArray(audit.actions)
+            ? audit.actions.find((a) => a && a.action_id === gateId)
+            : null
+        if (!cancelled && entry && typeof entry.status === 'string') setGateStatus(entry.status)
+      } catch {
+        // keep the last known status
       }
     }
 
@@ -192,6 +229,23 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
       borderRadius: '8px',
       padding: '8px',
     },
-    children: [jsx(A2uiSurface, { surface })],
+    children: [
+      gateStatus && GATE_COPY[gateStatus]
+        ? jsx('div', {
+            'data-uirizz-gate': gateStatus,
+            role: 'status',
+            style: {
+              fontSize: '12px',
+              padding: '6px 8px',
+              marginBottom: '6px',
+              borderRadius: '6px',
+              border: '1px solid var(--ui-border, var(--border))',
+              color: 'var(--ui-foreground, var(--foreground))',
+            },
+            children: GATE_COPY[gateStatus],
+          })
+        : null,
+      jsx(A2uiSurface, { surface }),
+    ],
   })
 }

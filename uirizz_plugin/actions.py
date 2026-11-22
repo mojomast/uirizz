@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+from uirizz_plugin import gate
 from uirizz_plugin.store import get_surface
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
@@ -33,6 +34,8 @@ def record_action(
     session_id: str,
     event: str,
     context: Any = None,
+    source_component_id: Any = None,
+    client_timestamp: Any = None,
 ) -> dict[str, Any]:
     """Store a structured action for a session. Never lock the surface."""
     if not isinstance(session_id, str) or not session_id:
@@ -45,7 +48,22 @@ def record_action(
     }
     # Read-only check so a missing store does not fail recording. Never write
     # locked or answered onto the surface record.
-    get_surface(str(surface_id))
+    surface = get_surface(str(surface_id))
+    # Every click goes into the audit log first. The gate decides whether it
+    # asks for a side effect; a click can never approve one.
+    entry = gate.log_action(
+        surface_id=str(surface_id),
+        session_id=session_id,
+        event=str(event),
+        context=context,
+        surface=surface,
+        source_component_id=source_component_id,
+        client_timestamp=client_timestamp,
+    )
+    rec["action_id"] = entry["action_id"]
+    rec["requires_confirmation"] = bool(entry["requires_confirmation"])
+    rec["gate_reason"] = entry["reason"]
+    rec["status"] = "pending_confirmation" if rec["requires_confirmation"] else "recorded"
     bucket = _PENDING.setdefault(session_id, [])
     bucket.append(rec)
     return rec
@@ -54,6 +72,10 @@ def record_action(
 def _format_context(actions: list[dict[str, Any]]) -> str:
     parts: list[str] = []
     for rec in actions:
+        if rec.get("requires_confirmation", False):
+            # Gated clicks are described by the approval gate, never as a plain
+            # "go update the card" instruction.
+            continue
         event = _sanitize_text(rec.get("event"))
         ctx = _sanitize_context(rec.get("context"))
         if isinstance(ctx, (dict, list)):
@@ -75,14 +97,28 @@ def pending_context_for_session(session_id: str | None) -> str | None:
     if not isinstance(session_id, str) or not session_id:
         return None
     actions = list(_PENDING.get(session_id) or [])
-    if not actions:
-        return None
-    return _format_context(actions)
+    text = _format_context(actions) if actions else ""
+    return text or None
 
 
 def pre_llm_call_context(**kwargs: Any) -> dict[str, str] | None:
     session_id = kwargs.get("session_id")
-    text = pending_context_for_session(session_id if isinstance(session_id, str) else None)
-    if not text:
+    sid = session_id if isinstance(session_id, str) else None
+    # The user's own typed reply is the only thing that can approve a gated click.
+    try:
+        gate.observe_user_message(sid, kwargs.get("user_message"))
+    except Exception:  # noqa: BLE001 — fail closed: no decision is recorded
+        pass
+    pieces: list[str] = []
+    text = pending_context_for_session(sid)
+    if text:
+        pieces.append(text)
+    try:
+        notice = gate.gate_notice(sid)
+    except Exception:  # noqa: BLE001 — pre_tool_call still vetoes tools
+        notice = None
+    if notice:
+        pieces.append(notice)
+    if not pieces:
         return None
-    return {"context": text}
+    return {"context": " ".join(pieces)}

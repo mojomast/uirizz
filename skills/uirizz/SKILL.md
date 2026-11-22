@@ -33,9 +33,10 @@ Desktop renderer.
   card for the same view.
 - `delete` — remove a `surface_id`.
 
-The tool result is always JSON. On success it includes a `MEDIA:` line for
-Desktop and Webapp. You do not need a hook to append that line; if the result
-already has it, leave it alone. On error, read `code` and `fix` and retry.
+The tool result is JSON, then a `MEDIA:` line. On success, copy that exact
+`MEDIA:` line, alone on its own line, into your reply. Desktop and Webapp draw
+the card only from your reply; without the line the user sees no card. On
+error, read `code` and `fix` and retry.
 
 ## Catalog and limits
 

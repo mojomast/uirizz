@@ -44,9 +44,10 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
     "name": TOOL_NAME,
     "description": (
         "Present, update, delete, or describe an A2UI v1.0 surface in this chat. "
-        "Use official Basic Catalog components only. Desktop and Webapp render a "
-        "MEDIA: file from the result; CLI, Telegram, and the classic dashboard "
-        "show fallback_text only. Call op=describe for the catalog, limits, and "
+        "Use official Basic Catalog components only. After success, copy the "
+        "result's MEDIA: line alone on its own line into your reply: Desktop "
+        "and Webapp draw the card from it; CLI, Telegram, and the classic "
+        "dashboard show fallback_text only. Call op=describe for the catalog, limits, and "
         "media policy. Prefer Express; otherwise send v1.0 JSONL. Reuse "
         "surface_id with op=update instead of creating a new card. Never pass "
         "local file paths or http/data image URLs."
@@ -207,6 +208,7 @@ def _success(op: str, record: dict[str, Any]) -> str:
             "fallback_text": record["fallback_text"],
             "component_count": record.get("component_count", 0),
             "media": media_tag,
+            "next": "Put the MEDIA: line below, alone on its own line, in your reply so the card is drawn.",
         }
     )
     # Desktop only mounts a tool-media renderer when a standalone MEDIA: line

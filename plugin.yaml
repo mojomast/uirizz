@@ -1,0 +1,31 @@
+# Native Hermes plugin manifest (v2). Quote version. Keep provides_* in sync with register().
+name: uirizz
+version: "0.1.0"
+description: >-
+  Renders A2UI v1.0 surfaces in Hermes Desktop and Webapp chat replies with
+  one tool, a2ui_render (present, update, delete, describe). Official Basic
+  Catalog only, required fallback_text for CLI and other non-Desktop clients,
+  public-https media only, no model-chosen local file reads. Live updates
+  reuse a stable surface_id. Clicks are structured actions; the card stays
+  editable. Does not register transform_llm_output, so it can run beside
+  hermes-a2ui. Disclosure: no credentials, no subprocesses, no network except
+  loading already-admitted public https images through the host once that path
+  lands. Surfaces are stored in the plugin data directory. Classic dashboard
+  chat remains a terminal and will not draw in-message widgets.
+author: mojomast
+license: MIT
+homepage: https://github.com/mojomast/uirizz
+tags:
+  - a2ui
+  - desktop
+  - ui
+  - skills
+manifest_version: 2
+api_version: 1
+requires_hermes: ">=0.23.0"
+provides_tools:
+  - a2ui_render
+provides_hooks:
+  - pre_llm_call
+provides_middleware: []
+requires_env: []

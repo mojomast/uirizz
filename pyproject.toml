@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uirizz"
+version = "0.1.0"
+description = "Hermes plugin that renders A2UI v1.0 surfaces in Desktop and Webapp chat replies."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Kyle Durepos" }]
+keywords = ["hermes", "a2ui", "plugin", "ui"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "pyyaml>=6,<7",
+  "ruamel.yaml>=0.18,<0.19",
+  "tiktoken>=0.7,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/mojomast/uirizz"
+Research = "https://github.com/mojomast/uirizz/blob/main/docs/RESEARCH.md"
+
+[tool.setuptools.packages.find]
+include = ["uirizz_plugin*"]
+exclude = ["tests*", "docs*", "evals*", "skills*", "desktop*", "scripts*"]
+
+[tool.setuptools.package-data]
+uirizz = ["py.typed"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

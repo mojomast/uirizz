@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from uirizz_plugin import express as express_mod
 from uirizz_plugin.catalog import (
     BASIC_CATALOG_ID,
     BASIC_COMPONENTS,
@@ -165,18 +166,14 @@ def _require_fallback(payload: dict[str, Any], *, required: bool) -> str | None:
 
 def _jsonl_from_args(payload: dict[str, Any]) -> str:
     express = payload.get("express")
-    jsonl = payload.get("jsonl")
     if isinstance(express, str) and express.strip():
-        raise AdmissionError(
-            "express_unavailable",
-            "A2UI Express compilation is not enabled in this build.",
-            "Send jsonl as raw A2UI v1.0 envelopes (one per line) instead of express.",
-        )
+        return express_mod.compile_express(express)
+    jsonl = payload.get("jsonl")
     if not isinstance(jsonl, str) or not jsonl.strip():
         raise AdmissionError(
             "missing_payload",
             "No A2UI payload was provided.",
-            "Send jsonl with at least one v1.0 envelope, or express once compilation is available.",
+            "Send express with A2UI Express source, or jsonl with at least one v1.0 envelope.",
         )
     return jsonl
 

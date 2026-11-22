@@ -171,7 +171,22 @@ def test_rejects_http_and_private_image_urls_during_present(monkeypatch):
         assert body["code"] == "invalid_media_url", raw
 
 
-def test_express_without_sdk_fails_closed():
+def test_express_without_sdk_fails_closed(monkeypatch):
+    try:
+        import uirizz_plugin.express as express_mod
+
+        def _unavailable(*_args, **_kwargs):
+            from uirizz_plugin.validate import AdmissionError
+
+            raise AdmissionError(
+                "express_unavailable",
+                "A2UI Express compilation is not enabled in this build.",
+                "Send jsonl as raw A2UI v1.0 envelopes instead of express.",
+            )
+
+        monkeypatch.setattr(express_mod, "compile_express", _unavailable)
+    except ImportError:
+        pass
     body = _load(
         handle_a2ui_render(
             {"op": "present", "fallback_text": "Hi", "express": "root = Text('Hi')"}

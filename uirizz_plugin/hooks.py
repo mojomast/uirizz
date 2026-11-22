@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 
-def pre_llm_call(**kwargs: Any) -> None:
-    """Inject structured user-action context once the action log lands.
+def pre_llm_call(**kwargs: Any):
+    """Inject structured user-action context for the current session only."""
+    try:
+        from uirizz_plugin.actions import pre_llm_call_context
 
-    Scaffold: no-op. Must never raise on unknown kwargs, and must not inspect
-    or block tools from other plugins or sessions.
-    """
-    return None
+        return pre_llm_call_context(**kwargs)
+    except Exception:
+        return None
 
 
 def register_hooks(ctx) -> None:

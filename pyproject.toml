@@ -32,7 +32,7 @@ include = ["uirizz_plugin*"]
 exclude = ["tests*", "docs*", "evals*", "skills*", "desktop*", "scripts*"]
 
 [tool.setuptools.package-data]
-uirizz = ["py.typed"]
+uirizz_plugin = ["py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

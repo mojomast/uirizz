@@ -4,7 +4,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.{js,jsx}'],
+    // .test.js under desktop/ is linted as renderer surface; node: test imports must use .mjs.
+    include: ['src/**/*.test.{js,jsx,mjs}'],
   },
   plugins: [
     {

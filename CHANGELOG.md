@@ -25,7 +25,11 @@ pin are **not** cut in this commit; they need an explicit maintainer yes.
 - Approval gate: a click is never approval. Fail-closed classification, a
   typed yes in chat, single-use session-scoped approval with a 600 s TTL, and
   a `pre_tool_call` veto of other tools while an action is pending.
-- Bundled skill `uirizz:uirizz`, including wide-layout guidance.
+- Bundled skill `uirizz:uirizz`, with when-to-use / when-not-to-use rules,
+  error recovery, and a progressive-disclosure layout example in
+  `skills/uirizz/references/layout.md`.
+- README with a Night Hive banner, how-it-works screenshots, and a
+  quickstart.
 - pytest and vitest suites, strict `plugin.yaml` parsing, o200k token-budget
   tests, and CI for Python 3.11/3.12 plus the desktop bundle.
 
@@ -42,4 +46,4 @@ pin are **not** cut in this commit; they need an explicit maintainer yes.
 - No credentials, no `requires_env`, no runtime subprocesses.
 - Does not register `transform_llm_output`.
 
-[0.1.0]: https://github.com/mojomast/uirizz/tree/feat/mvp
+[0.1.0]: https://github.com/mojomast/uirizz/tree/main

@@ -45,15 +45,15 @@ __all__ = [
 A2UI_RENDER_SCHEMA: dict[str, Any] = {
     "name": TOOL_NAME,
     "description": (
-        "Present, update, delete, or describe an A2UI v1.0 surface in this chat. "
-        "Use official Basic Catalog components only. After success, copy the "
-        "result's MEDIA: line alone on its own line into your reply: Desktop "
-        "and Webapp draw the card from it; CLI, Telegram, and the classic "
-        "dashboard show fallback_text only. Call op=describe for the catalog, limits, and "
-        "media policy. Prefer Express; otherwise send v1.0 JSONL. Use weighted "
-        "Row/Column layouts by default. Reuse "
-        "surface_id with op=update instead of creating a new card. Never pass "
-        "local file paths or http/data image URLs."
+        "Present, update, delete, describe, or audit an A2UI v1.0 surface in this chat. "
+        "Official Basic Catalog only. Never use shell, code, gh, or git to build the card. "
+        "After success, copy the result's MEDIA: line alone on its own line into your reply: Desktop "
+        "and Webapp draw the card from it; CLI, Telegram, and the classic dashboard show fallback_text only. "
+        "fallback_text is required on present. Call op=describe for catalog, limits, and policy. "
+        "Prefer Express; otherwise send v1.0 JSONL. Use weighted Row/Column layouts. "
+        "Reuse surface_id with op=update (prefer updateDataModel) instead of a new card. "
+        "A click is not approval. Never pass local file paths or http/data image URLs. "
+        "On error, read code and fix and retry."
     ),
     "parameters": {
         "type": "object",

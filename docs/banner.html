@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>uirizz banner</title>
+<!--
+  Source for docs/banner.png (1280x320, rendered at 2x = 2560x640).
+  Night Hive: base #0B0F14, honey #F0B86E, mint #54D3A1.
+  The committed PNG was rendered with local Syne and Geist variable fonts.
+  To re-render, point the @font-face srcs below at your copies of those
+  fonts, or load them from a public source, then screenshot the 1280x320
+  .stage at 2x. No secrets in this file.
+-->
+
+<style>
+@font-face {
+  font-family: Syne;
+  src: url("file:///usr/share/fonts/truetype/sand-box/google/Syne/Syne-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 800;
+}
+@font-face {
+  font-family: Geist;
+  src: url("file:///usr/share/fonts/truetype/sand-box/google/Geist/Geist-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 900;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 1280px; height: 320px; overflow: hidden;
+  background: #0B0F14;
+  font-family: Geist, system-ui, sans-serif;
+  color: #E8EDF2;
+}
+.stage {
+  width: 1280px; height: 320px; position: relative;
+  background:
+    radial-gradient(900px 280px at 18% 110%, rgba(240,184,110,0.16), transparent 60%),
+    radial-gradient(700px 240px at 92% -10%, rgba(84,211,161,0.14), transparent 55%),
+    linear-gradient(180deg, #10161d 0%, #0B0F14 100%);
+}
+.grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(232,237,242,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232,237,242,0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse at 50% 50%, #000 30%, transparent 80%);
+}
+.rule {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: linear-gradient(90deg, #F0B86E 0%, #54D3A1 100%);
+}
+.copy {
+  position: absolute; left: 72px; top: 78px; width: 620px;
+}
+.mark {
+  font-family: Syne, sans-serif;
+  font-weight: 800;
+  font-size: 92px;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  color: #F4F7FA;
+}
+.mark span { color: #F0B86E; }
+.tag {
+  margin-top: 22px;
+  font-weight: 450;
+  font-size: 26px;
+  letter-spacing: 0.01em;
+  color: #B7C0CA;
+}
+.tag em {
+  font-style: normal;
+  color: #54D3A1;
+  font-weight: 550;
+}
+.card {
+  position: absolute; right: 72px; top: 44px;
+  width: 420px; height: 232px;
+  background: rgba(16, 22, 29, 0.92);
+  border: 1px solid rgba(232,237,242,0.10);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.35);
+  padding: 18px 18px 16px;
+}
+.card-head {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: #9AA3AD; letter-spacing: 0.06em; text-transform: uppercase;
+  font-weight: 550;
+}
+.dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #54D3A1;
+  box-shadow: 0 0 10px rgba(84,211,161,0.7);
+}
+.kpis {
+  display: flex; gap: 10px; margin-top: 16px;
+}
+.kpi {
+  flex: 1;
+  background: #0B0F14;
+  border: 1px solid rgba(232,237,242,0.08);
+  border-radius: 10px;
+  padding: 10px 12px 11px;
+}
+.kpi .lbl { font-size: 11px; color: #8B949E; letter-spacing: 0.04em; text-transform: uppercase; }
+.kpi .val { font-family: Syne, sans-serif; font-weight: 700; font-size: 26px; margin-top: 4px; }
+.kpi.honey .val { color: #F0B86E; }
+.kpi.mint .val { color: #54D3A1; }
+.kpi.plain .val { color: #E8EDF2; }
+.bar {
+  margin-top: 16px; height: 8px; border-radius: 99px;
+  background: #1a222c; overflow: hidden;
+}
+.bar > i {
+  display: block; height: 100%; width: 62%;
+  background: linear-gradient(90deg, #F0B86E, #54D3A1);
+}
+.foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 16px;
+}
+.btn {
+  background: #F0B86E; color: #0B0F14;
+  font-weight: 650; font-size: 13px;
+  padding: 7px 12px; border-radius: 8px;
+}
+.note { font-size: 12px; color: #8B949E; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="grid"></div>
+    <div class="copy">
+      <div class="mark">ui<span>rizz</span></div>
+      <div class="tag">A2UI cards in Hermes chat. A click is never approval.</div>
+    </div>
+    <div class="card" aria-hidden="true">
+      <div class="card-head"><i class="dot"></i> Live surface</div>
+      <div class="kpis">
+        <div class="kpi honey"><div class="lbl">Error</div><div class="val">0.31%</div></div>
+        <div class="kpi mint"><div class="lbl">Canary</div><div class="val">50%</div></div>
+        <div class="kpi plain"><div class="lbl">Budget</div><div class="val">62%</div></div>
+      </div>
+      <div class="bar"><i></i></div>
+      <div class="foot">
+        <span class="note">updateDataModel only</span>
+        <span class="btn">Deploy</span>
+      </div>
+    </div>
+    <div class="rule"></div>
+  </div>
+</body>
+</html>

@@ -96,7 +96,11 @@ def _format_context(actions: list[dict[str, Any]]) -> str:
 def pending_context_for_session(session_id: str | None) -> str | None:
     if not isinstance(session_id, str) or not session_id:
         return None
-    actions = list(_PENDING.get(session_id) or [])
+    # Deliver each click once. pre_llm_call context is ephemeral (not stored in
+    # the transcript), but re-injecting the same clicks every turn told the model
+    # to update the card again on every later message. Gated clicks are not lost:
+    # the approval gate re-reads them from the audit log each turn.
+    actions = _PENDING.pop(session_id, [])
     text = _format_context(actions) if actions else ""
     return text or None
 

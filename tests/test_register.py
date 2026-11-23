@@ -49,13 +49,20 @@ def test_pre_llm_call_accepts_kwargs():
     assert pre_llm_call(session_id="s", messages=[], unexpected="x") is None
 
 
-def test_every_op_returns_json_string():
-    from uirizz_plugin.tools import handle_a2ui_render
+def test_every_op_returns_json_string(tmp_path):
+    from uirizz_plugin.store import set_store_dir
+    from uirizz_plugin.tools import handle_a2ui_render, parse_tool_result
 
+    set_store_dir(tmp_path)
+    golden = (
+        '{"version":"1.0","createSurface":{"surfaceId":"s1","catalogId":'
+        '"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",'
+        '"components":[{"id":"root","component":"Text","text":"Hello"}]}}'
+    )
     cases = [
         {"op": "describe"},
-        {"op": "present", "fallback_text": "Hello", "jsonl": "{}"},
-        {"op": "update", "surface_id": "s1", "jsonl": "{}"},
+        {"op": "present", "fallback_text": "Hello", "jsonl": golden, "surface_id": "s1"},
+        {"op": "update", "surface_id": "s1", "jsonl": golden, "fallback_text": "Hi"},
         {"op": "delete", "surface_id": "s1"},
         {"op": "nope"},
         {},
@@ -64,7 +71,7 @@ def test_every_op_returns_json_string():
     for args in cases:
         result = handle_a2ui_render(args)  # type: ignore[arg-type]
         assert isinstance(result, str), args
-        body = json.loads(result)
+        body = parse_tool_result(result)
         assert isinstance(body, dict)
         assert "ok" in body
         if args == {"op": "describe"}:
@@ -78,6 +85,5 @@ def test_every_op_returns_json_string():
             assert body["code"] == "invalid_op"
             assert "fix" in body
         else:
-            assert body["ok"] is False
-            assert body["code"] == "not_implemented"
-            assert "fix" in body
+            assert body["ok"] is True
+            assert "code" not in body

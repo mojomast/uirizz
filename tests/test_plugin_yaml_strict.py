@@ -30,7 +30,7 @@ def test_plugin_yaml_strict_no_duplicate_keys():
     tools = data.get("provides_tools") or []
     assert tools == ["a2ui_render"]
     hooks = data.get("provides_hooks") or []
-    assert hooks == ["pre_llm_call"]
+    assert hooks == ["pre_llm_call", "pre_tool_call"]
     assert "transform_llm_output" not in hooks
     assert data.get("requires_hermes") == ">=0.23.0"
 

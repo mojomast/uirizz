@@ -11,7 +11,9 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Kyle Durepos" }]
 keywords = ["hermes", "a2ui", "plugin", "ui"]
-dependencies = []
+dependencies = [
+  "a2ui-agent-sdk>=0.11,<1",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -30,7 +32,7 @@ include = ["uirizz_plugin*"]
 exclude = ["tests*", "docs*", "evals*", "skills*", "desktop*", "scripts*"]
 
 [tool.setuptools.package-data]
-uirizz = ["py.typed"]
+uirizz_plugin = ["py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

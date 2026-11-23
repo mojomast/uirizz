@@ -111,7 +111,11 @@ Ordered by user impact.
 7. **Compact stored surfaces.** `messages` grows with every update and is
    resent on every poll. On update, fold history into one snapshot
    (`createSurface` with current components and data model) using the same
-   `RendererState`.
+   `RendererState`. Measured while reviewing this PR: replaying 200 stored
+   updates into `RendererState` took ~62 ms and a further data-only update
+   took ~120 ms (200 sequential updates ~22 s). Replay is not a crash risk
+   at that size, but history still grows linearly, so compaction remains
+   worthwhile.
 8. **Poll less.** Each card polls twice every 4 s for its whole lifetime. Back
    off when the revision is unchanged and nothing is pending, and pause
    off-screen cards (IntersectionObserver). The socket path already exists.

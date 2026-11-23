@@ -26,10 +26,28 @@ def _unavailable(exc: BaseException | None = None) -> AdmissionError:
     )
 
 
+_PATH = re.compile(
+    r'(?i)(?:/home|/Users|/opt|/usr|/var|/tmp|/workspace|/root|/etc)[^\s"\']*'
+)
+_FILE_LINE = re.compile(r'(?i)File "[^"]+"')
+
+
 def _detail(exc: BaseException) -> str:
     """The compiler's own message (line, column, allowed enum values), sanitized."""
     text = _CTRL.sub(" ", str(exc) or type(exc).__name__).strip()
     text = text.replace(" - Help: Please correct the syntax error in your Express DSL.", "")
+    # Never leak a traceback or a filesystem path to the model.
+    if "Traceback (most recent call last)" in text:
+        lines = [
+            ln.strip()
+            for ln in text.splitlines()
+            if ln.strip()
+            and "Traceback" not in ln
+            and not ln.strip().startswith("File ")
+        ]
+        text = lines[-1] if lines else "internal compiler error"
+    text = _FILE_LINE.sub('File "<redacted>"', text)
+    text = _PATH.sub("<redacted>", text)
     if len(text) > _DETAIL_MAX:
         text = text[: _DETAIL_MAX - 3] + "..."
     return text
@@ -142,9 +160,17 @@ def compile_express(
     processor = _processor()
     state = _state_for(processor, prior_messages)
     if state is not None and surface_id:
+        # Normalize before interpolation so a forged or stored id cannot
+        # break out of the surface("...", update=true) header.
+        from uirizz_plugin.store import StoreError, normalize_surface_id
+
+        try:
+            surface_id = normalize_surface_id(surface_id, required=True)
+        except StoreError as exc:
+            raise AdmissionError(exc.code, exc.error, exc.fix) from exc
         body = _unwrap(source)
         if not _SURFACE_STMT.search(body):
-            body = f'surface("{surface_id}", update=true)\n{body}'
+            body = f"surface({json.dumps(surface_id)}, update=true)\n{body}"
         try:
             parts = processor.parse_response(f"<a2ui>{body}</a2ui>", wrapped=True, state=state)
             messages = _messages_from_parts(parts)

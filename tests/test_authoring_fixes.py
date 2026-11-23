@@ -106,3 +106,54 @@ def test_describe_topics_return_bundled_references(topic):
 def test_describe_unknown_topic_fails_closed():
     out = json.loads(handle_a2ui_render({"op": "describe", "topic": "nope"}))
     assert out["ok"] is False and out["code"] == "invalid_payload"
+
+
+def test_compile_express_rejects_injected_surface_id():
+    from uirizz_plugin.express import compile_express
+    from uirizz_plugin.validate import AdmissionError
+
+    p = _call(
+        op="present",
+        express='$/kpi/rps = 10\nroot = Card(Text(formatString("${/kpi/rps} rps")))',
+        fallback_text="10 rps",
+    )
+    prior = store.get_surface(p["surface_id"])["messages"]
+    with pytest.raises(AdmissionError) as caught:
+        compile_express(
+            "$/kpi/rps = 42",
+            prior_messages=prior,
+            surface_id='x"); root = Text("injected") #',
+        )
+    assert caught.value.code == "invalid_payload"
+
+
+def test_detail_redacts_paths_and_tracebacks():
+    from uirizz_plugin.express import _detail
+
+    class Fake(Exception):
+        pass
+
+    long = _detail(Fake("N" * 900))
+    assert len(long) == 600 and long.endswith("...")
+    ctrl = _detail(Fake("line 1\x00\x07 oops - Help: Please correct the syntax error in your Express DSL."))
+    assert "\x00" not in ctrl and "Please correct" not in ctrl
+    leaked = _detail(Fake("failed at /home/box/secret/key.pem"))
+    assert "/home/" not in leaked and "<redacted>" in leaked
+    tb = _detail(
+        Fake(
+            'Traceback (most recent call last):\n  File "/opt/uirizz/express.py", line 9\nValueError: bad enum'
+        )
+    )
+    assert "Traceback" not in tb and "/opt/" not in tb
+    assert "bad enum" in tb or tb == "internal compiler error"
+
+
+def test_describe_topic_is_allowlisted_and_fails_closed(tmp_path, monkeypatch):
+    from uirizz_plugin import tools as tools_mod
+
+    for topic in ("../etc/passwd", "recipes.md", "layout", "express/../../tools.py"):
+        out = json.loads(handle_a2ui_render({"op": "describe", "topic": topic}))
+        assert out["ok"] is False and out["code"] == "invalid_payload"
+    monkeypatch.setattr(tools_mod, "_REFERENCES", tmp_path / "missing")
+    out = json.loads(handle_a2ui_render({"op": "describe", "topic": "recipes"}))
+    assert out["ok"] is False and out["code"] == "not_found"

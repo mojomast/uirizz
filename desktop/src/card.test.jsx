@@ -272,4 +272,96 @@ describe('SurfaceCard', () => {
     const second = await clickDeploy(plain.ctx)
     expect(second.container.querySelectorAll('[data-uirizz-gate]').length).toBe(0)
   })
+
+  const BINDING = {
+    action: 'deploy_service',
+    title: 'Deploy checkout-api v24 to production',
+    tool: 'mcp_github_dispatch_workflow',
+    args: { repo: 'acme/checkout-api' },
+    risk: 'high',
+    auto_approve: false,
+    code_required: true,
+  }
+
+  function boundCtx(auditEntries, actionResponse) {
+    const intervals = []
+    let i = 0
+    const surface = {
+      ok: true,
+      surface_id: 'demo',
+      revision: 1,
+      messages: [{ version: '1.0', createSurface: { surfaceId: 'demo' } }],
+    }
+    const ctx = {
+      rest: vi.fn(async (path) => {
+        if (path.startsWith('/surfaces/')) return surface
+        if (path === '/actions') return actionResponse
+        if (path.startsWith('/audit')) {
+          const entry = auditEntries[Math.min(i, auditEntries.length - 1)]
+          i += 1
+          return { ok: true, actions: [entry] }
+        }
+        return { ok: true }
+      }),
+      setInterval: (fn) => {
+        intervals.push(fn)
+        return 1
+      },
+      clearInterval: vi.fn(),
+    }
+    return { ctx, intervals }
+  }
+
+  it('shows the plugin-owned confirm panel for a declared action, with the code for high risk', async () => {
+    const { ctx } = boundCtx([{ action_id: 'act-abc123def456', status: 'pending_confirmation', binding: BINDING }], {
+      ok: true,
+      action_id: 'act-abc123def456',
+      requires_confirmation: true,
+      status: 'pending_confirmation',
+      binding: BINDING,
+      approved: false,
+    })
+    const { container } = await clickDeploy(ctx)
+    await waitFor(() => expect(container.querySelector('[data-uirizz-bound]')).toBeTruthy())
+    expect(container.querySelector('[data-uirizz-confirm-title]').textContent).toBe(BINDING.title)
+    expect(container.querySelector('[data-uirizz-confirm-meta]').textContent).toContain('mcp_github_dispatch_workflow')
+    const panel = container.querySelector('[data-uirizz-gate="pending_confirmation"]')
+    expect(panel.textContent).toContain('yes abc123')
+    expect(panel.textContent).toContain('Clicking is not approval')
+  })
+
+  it('follows a bound call through executing to completed from the audit log', async () => {
+    const { ctx, intervals } = boundCtx(
+      [
+        { action_id: 'act-abc123def456', status: 'executing', binding: BINDING },
+        { action_id: 'act-abc123def456', status: 'completed', binding: BINDING },
+      ],
+      { ok: true, action_id: 'act-abc123def456', requires_confirmation: true, status: 'pending_confirmation', binding: BINDING },
+    )
+    const { container } = await clickDeploy(ctx)
+    await act(async () => {
+      intervals[0]()
+    })
+    await waitFor(() => expect(container.querySelector('[data-uirizz-gate="executing"]')).toBeTruthy())
+    await act(async () => {
+      intervals[0]()
+    })
+    await waitFor(() => expect(container.querySelector('[data-uirizz-gate="completed"]')).toBeTruthy())
+    expect(container.querySelector('[data-uirizz-confirm-title]').textContent).toBe(BINDING.title)
+  })
+
+  it('explains a rejected declared click and never shows it as pending', async () => {
+    const { ctx } = boundCtx([{ action_id: 'act-1', status: 'rejected', binding: BINDING, rejected: 'invalid params: env: must be one of' }], {
+      ok: true,
+      action_id: 'act-1',
+      requires_confirmation: false,
+      status: 'rejected',
+      binding: BINDING,
+      rejected: 'invalid params: env: must be one of',
+    })
+    const { container } = await clickDeploy(ctx)
+    await waitFor(() => expect(container.querySelector('[data-uirizz-gate="rejected"]')).toBeTruthy())
+    expect(container.textContent).toContain('Nothing will run')
+    expect(container.querySelector('[data-uirizz-gate="pending_confirmation"]')).toBeNull()
+  })
 })

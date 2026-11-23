@@ -115,7 +115,7 @@ Ordered by user impact.
 8. **Poll less.** Each card polls twice every 4 s for its whole lifetime. Back
    off when the revision is unchanged and nothing is pending, and pause
    off-screen cards (IntersectionObserver). The socket path already exists.
-9. **Harden the yes for destructive verbs.** A bare `yes` meant for another
+9. **Harden the yes for destructive verbs.** (Done for declared actions: `risk: high` requires `yes <code>`; see docs/ACTIONS.md.) A bare `yes` meant for another
    question can approve a pending action. For delete, pay, transfer, wipe or
    drop, require `yes <code>`; keep a bare `yes` for milder verbs.
 10. **Images.** The known issue that "public https images often do not load"

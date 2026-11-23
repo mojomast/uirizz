@@ -25,7 +25,13 @@ def pre_tool_call(**kwargs: Any):
     try:
         from uirizz_plugin.gate import tool_block_message
 
-        message = tool_block_message(kwargs.get("session_id"), tool)
+        message = tool_block_message(
+            kwargs.get("session_id"),
+            tool,
+            kwargs.get("args"),
+            kwargs.get("tool_call_id"),
+            has_args="args" in kwargs,
+        )
     except Exception:
         from uirizz_plugin.gate import SAFE_TOOLS_WHILE_PENDING
 
@@ -40,8 +46,28 @@ def pre_tool_call(**kwargs: Any):
     return None
 
 
+def post_tool_call(**kwargs: Any):
+    """Record the outcome of a declared action's bound call. Observer only."""
+    try:
+        from uirizz_plugin.gate import record_tool_result
+
+        record_tool_result(
+            kwargs.get("session_id"),
+            kwargs.get("tool_name"),
+            kwargs.get("args"),
+            kwargs.get("tool_call_id"),
+            kwargs.get("status"),
+            kwargs.get("error_type"),
+            has_args="args" in kwargs,
+        )
+    except Exception:  # noqa: BLE001 - an unrecorded result shows as unknown, never as done
+        pass
+    return None
+
+
 def register_hooks(ctx) -> None:
     if not hasattr(ctx, "register_hook"):
         return
     ctx.register_hook("pre_llm_call", pre_llm_call)
     ctx.register_hook("pre_tool_call", pre_tool_call)
+    ctx.register_hook("post_tool_call", post_tool_call)

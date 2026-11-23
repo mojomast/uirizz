@@ -55,8 +55,13 @@ def _record_action(body: dict[str, Any]) -> dict[str, Any]:
         "action_id": rec["action_id"],
         "requires_confirmation": rec["requires_confirmation"],
         "status": rec["status"],
-        # A click never approves anything. The user's typed yes in chat does.
-        "approved": False,
+        # Plugin-rendered confirm for declared actions: title, tool, redacted
+        # args, risk, and whether the typed yes needs the code.
+        "binding": rec.get("binding"),
+        "rejected": rec.get("rejected"),
+        # A click never approves anything. The only exception is a low-risk
+        # declared action the user marked auto_approve in their own actions file.
+        "approved": rec["status"] == "approved",
     }
 
 

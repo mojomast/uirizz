@@ -19,6 +19,50 @@ const GATE_COPY = {
   completed: 'Done. Logged in the audit log.',
   failed: 'Failed. Logged in the audit log.',
   cancelled: 'Cancelled. Logged in the audit log.',
+  executing: 'Running the approved call…',
+  unknown: 'Outcome unknown. Check the target system before trying again.',
+  rejected: 'Not accepted, so nothing will run.',
+}
+
+// Declared actions: the confirm panel is drawn from the plugin's own record of
+// the bound call (title, tool, risk), never from model-authored card text.
+function shortCode(actionId) {
+  return typeof actionId === 'string' ? actionId.replace('act-', '').slice(0, 6) : ''
+}
+
+function boundCopy(gate) {
+  const b = gate.binding || {}
+  const code = shortCode(gate.actionId)
+  const reply = b.code_required ? `yes ${code}` : 'yes'
+  switch (gate.status) {
+    case 'pending_confirmation':
+      return (
+        (gate.needsCode ? `This one needs the code. ` : '') +
+        `Reply "${reply}" in chat to approve, or "no". Clicking is not approval.`
+      )
+    case 'approved':
+      return gate.decisionBy === 'policy:auto_approve'
+        ? 'Approved by your auto-approve rule. Only this exact call may run, once.'
+        : 'Approved by your reply in chat. Only this exact call may run, once.'
+    case 'rejected':
+      return `Not accepted: ${gate.rejected || 'invalid request'}. Nothing will run.`
+    case 'failed':
+      return `Failed${gate.errorType ? ` (${gate.errorType})` : ''}. Logged in the audit log.`
+    default:
+      return GATE_COPY[gate.status] || null
+  }
+}
+
+function gateFromEntry(entry, prev) {
+  return {
+    actionId: entry.action_id || (prev && prev.actionId),
+    status: entry.status,
+    binding: entry.binding || (prev && prev.binding) || null,
+    rejected: entry.rejected || null,
+    errorType: entry.error_type || null,
+    needsCode: Boolean(entry.needs_code),
+    decisionBy: entry.decision_by || null,
+  }
 }
 
 function lookUpSurfaceId(args, result) {
@@ -33,7 +77,7 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
   const [loadError, setLoadError] = useState(null)
   const processed = useRef(0)
   const processorRef = useRef(null)
-  const [gateStatus, setGateStatus] = useState(null)
+  const [gate, setGate] = useState(null)
   const gateIdRef = useRef(null)
 
   const processor = useMemo(() => {
@@ -55,9 +99,16 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
         }).then((res) => {
           // Only the server decides whether a click needs confirmation, and the
           // card never marks anything approved.
-          if (res && res.ok !== false && res.requires_confirmation && typeof res.action_id === 'string') {
+          if (
+            res &&
+            res.ok !== false &&
+            typeof res.action_id === 'string' &&
+            (res.requires_confirmation || res.binding)
+          ) {
             gateIdRef.current = res.action_id
-            setGateStatus('pending_confirmation')
+            const status =
+              typeof res.status === 'string' && GATE_COPY[res.status] ? res.status : 'pending_confirmation'
+            setGate(gateFromEntry({ ...res, status }, null))
           }
         })
       },
@@ -141,7 +192,9 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
           audit && Array.isArray(audit.actions)
             ? audit.actions.find((a) => a && a.action_id === gateId)
             : null
-        if (!cancelled && entry && typeof entry.status === 'string') setGateStatus(entry.status)
+        if (!cancelled && entry && typeof entry.status === 'string') {
+          setGate((prev) => gateFromEntry(entry, prev))
+        }
       } catch {
         // keep the last known status
       }
@@ -230,21 +283,49 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
       padding: '8px',
     },
     children: [
-      gateStatus && GATE_COPY[gateStatus]
-        ? jsx('div', {
-            'data-uirizz-gate': gateStatus,
+      gate && gate.binding
+        ? jsxs('div', {
+            'data-uirizz-gate': gate.status,
+            'data-uirizz-bound': gate.binding.action || 'true',
             role: 'status',
+            'aria-live': 'polite',
             style: {
               fontSize: '12px',
-              padding: '6px 8px',
+              padding: '8px 10px',
               marginBottom: '6px',
               borderRadius: '6px',
               border: '1px solid var(--ui-border, var(--border))',
               color: 'var(--ui-foreground, var(--foreground))',
             },
-            children: GATE_COPY[gateStatus],
+            children: [
+              jsx('div', {
+                'data-uirizz-confirm-title': '',
+                style: { fontWeight: 600, fontSize: '13px' },
+                children: gate.binding.title,
+              }),
+              jsx('div', {
+                'data-uirizz-confirm-meta': '',
+                style: { opacity: 0.75, margin: '2px 0 4px' },
+                children: `${gate.binding.tool} · ${gate.binding.risk} risk · uirizz confirm`,
+              }),
+              jsx('div', { children: boundCopy(gate) }),
+            ],
           })
-        : null,
+        : gate && GATE_COPY[gate.status]
+          ? jsx('div', {
+              'data-uirizz-gate': gate.status,
+              role: 'status',
+              style: {
+                fontSize: '12px',
+                padding: '6px 8px',
+                marginBottom: '6px',
+                borderRadius: '6px',
+                border: '1px solid var(--ui-border, var(--border))',
+                color: 'var(--ui-foreground, var(--foreground))',
+              },
+              children: GATE_COPY[gate.status],
+            })
+          : null,
       jsx(A2uiSurface, { surface }),
     ],
   })

@@ -1,0 +1,53 @@
+# uirizz declared actions: copy to <plugin data dir>/actions.yaml
+# (usually ~/.hermes/plugin-data/uirizz/actions.yaml) and edit.
+#
+# Each action binds a card button to ONE exact Hermes tool call. The tool must
+# already exist in your profile (built-in, plugin, or MCP). uirizz never runs
+# anything itself and never holds credentials: keep secrets in the tool's own
+# configuration, never in this file.
+#
+# Check the file:  python -m uirizz_plugin.bindings check
+# The model sees:  a2ui_render op=describe topic=actions
+
+actions:
+
+  # High risk: the user must type "yes <code>" in chat.
+  deploy_service:
+    title: "Deploy {service} {version} to {env}"
+    description: "Run the deploy workflow for one service."
+    tool: mcp_github_dispatch_workflow        # replace with your tool's name
+    args:
+      repo: "acme/{service}"
+      workflow: deploy.yml
+      ref: main
+      inputs:
+        version: "{version}"
+        env: "{env}"
+        request_id: "{operation_id}"          # stable id: pass it to idempotency keys
+    params:
+      service: {type: string, enum: [checkout-api, search-api]}
+      version: {type: string, pattern: "^v[0-9]+$"}
+      env:     {type: string, enum: [staging, production]}
+    risk: high
+    limits: {per_hour: 3}
+
+  # Medium risk (the default): a typed "yes" approves.
+  post_status:
+    title: "Post to #{channel}: {text}"
+    tool: mcp_slack_post_message
+    args: {channel: "{channel}", text: "{text}"}
+    params:
+      channel: {type: string, enum: [ops, releases]}
+      text:    {type: string, minLength: 3, maxLength: 280}
+
+  # Low risk + auto_approve: the click itself runs it (still bound to the exact
+  # call, still logged). Only use for actions you would happily undo.
+  snooze_alert:
+    title: "Snooze {alert} for {minutes} min"
+    tool: mcp_pagerduty_snooze_incident
+    args: {incident_id: "{alert}", duration_minutes: "{minutes}"}
+    params:
+      alert:   {type: string, pattern: "^[A-Z0-9-]{3,40}$"}
+      minutes: {type: integer, minimum: 5, maximum: 120, default: 30}
+    risk: low
+    auto_approve: true

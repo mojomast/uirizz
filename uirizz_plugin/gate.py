@@ -15,6 +15,16 @@ States of a gated action (``status``):
 * ``superseded``: a newer click on the same control replaced it.
 * ``completed`` / ``failed`` / ``cancelled``: the outcome recorded via the tool.
 * ``recorded``: a click that was explicitly read-only; it never gates anything.
+
+Declared actions (see ``bindings.py``) add a bound call to the click: the
+approval covers that one tool name plus a hash of its exact arguments. They add:
+
+* ``rejected``: the click's params failed validation or a rate limit; nothing to approve.
+* ``executing``: ``pre_tool_call`` let the approved call through (the approval is used up).
+* ``unknown``: the call was cancelled mid-flight or never reported back; check before retrying.
+
+For declared actions ``completed`` / ``failed`` come from ``post_tool_call``,
+not from the model.
 """
 
 from __future__ import annotations
@@ -50,6 +60,12 @@ SAFE_TOOLS_WHILE_PENDING = frozenset(
 )
 
 OUTCOMES = ("done", "failed", "cancelled")
+# How long a bound call may stay "executing" before it is shown as unknown.
+EXECUTING_TTL_S = 3600
+# Statuses that count toward a declared action's per-hour limit.
+_COUNTED = {"approved", "executing", "completed", "failed", "unknown"}
+# Finished or refused bound calls whose exact replay is blocked for a while.
+_NO_REPLAY = {"executing", "completed", "failed", "unknown", "denied", "cancelled", "expired"}
 
 _MARKER_KEYS = ("side_effect", "sideEffect", "requires_confirmation", "requiresConfirmation")
 _READ_ONLY_KEYS = ("read_only", "readOnly")
@@ -352,11 +368,21 @@ def _fold(entries: list[dict[str, Any]], now: float | None = None) -> dict[str, 
                     "action_id", "session_id", "surface_id", "event", "context",
                     "source_component_id", "client_timestamp", "requires_confirmation",
                     "reason", "ts", "_t")},
-                "status": "pending_confirmation" if e.get("requires_confirmation") else "recorded",
+                "status": (
+                    "rejected" if e.get("rejected")
+                    else "pending_confirmation" if e.get("requires_confirmation") else "recorded"
+                ),
                 "announced": False,
                 "decided_t": None,
                 "decision_by": None,
                 "outcome": None,
+                "binding": e.get("binding"),
+                "rejected": e.get("rejected"),
+                "consumed_t": None,
+                "tool_call_id": None,
+                "error_type": None,
+                "outcome_announced": False,
+                "notes": [],
             }
         elif isinstance(aid, str) and aid in actions:
             act = actions[aid]
@@ -370,11 +396,31 @@ def _fold(entries: list[dict[str, Any]], now: float | None = None) -> dict[str, 
                 act["outcome"] = e.get("outcome")
                 act["status"] = {"done": "completed", "failed": "failed", "cancelled": "cancelled"}.get(
                     str(e.get("outcome")), act["status"])
+            elif kind == "consumed" and act["status"] == "approved":
+                act["status"] = "executing"
+                act["consumed_t"] = e.get("_t")
+                act["tool_call_id"] = e.get("tool_call_id")
+            elif kind == "released" and act["status"] == "executing":
+                act["status"] = "approved"
+                act["consumed_t"] = None
+                act["tool_call_id"] = None
+            elif kind == "executed" and act["status"] == "executing":
+                act["status"] = str(e.get("result_status") or "unknown")
+                act["outcome"] = {"completed": "done", "failed": "failed"}.get(act["status"], "unknown")
+                act["error_type"] = e.get("error_type")
+                act["decided_t"] = act["decided_t"] or e.get("_t")
+            elif kind == "outcome_announced":
+                act["outcome_announced"] = True
+            elif kind == "note":
+                act["notes"].append(e.get("note"))
     for act in actions.values():
         if act["status"] == "pending_confirmation" and now - float(act["_t"] or 0) > APPROVAL_TTL_S:
             act["status"] = "expired"
         elif act["status"] == "approved" and now - float(act["decided_t"] or 0) > APPROVAL_TTL_S:
             act["status"] = "expired"
+        elif act["status"] == "executing" and now - float(act["consumed_t"] or 0) > EXECUTING_TTL_S:
+            act["status"] = "unknown"
+            act["outcome"] = "unknown"
     return actions
 
 
@@ -391,6 +437,17 @@ def _short(action_id: str) -> str:
 # ------------------------------------------------------------------ writers
 
 
+def _recent_count(action_name: str, now: float | None = None) -> int:
+    now = _now() if now is None else now
+    count = 0
+    for act in _fold(read_entries(), now).values():
+        b = act.get("binding") or {}
+        if b.get("action") == action_name and act["status"] in _COUNTED:
+            if now - float(act.get("_t") or 0) <= 3600:
+                count += 1
+    return count
+
+
 def log_action(
     *,
     surface_id: str,
@@ -401,12 +458,41 @@ def log_action(
     source_component_id: Any = None,
     client_timestamp: Any = None,
 ) -> dict[str, Any]:
-    """Record a click. Never authorizes anything. Returns the audit entry."""
-    gated, reason = classify(event, context, definition_contexts(surface, str(event)))
+    """Record a click. Never authorizes anything. Returns the audit entry.
+
+    A click on a declared action is validated and bound to one exact tool call.
+    Only a ``risk: low`` action the user marked ``auto_approve`` in their own
+    actions file is approved by the click; that is the user's standing
+    approval for that one bound call, not the card's.
+    """
+    action_id = "act-" + uuid.uuid4().hex[:12]
+    binding: dict[str, Any] | None = None
+    rejected: str | None = None
+    declared = None
+    try:
+        from uirizz_plugin import bindings as _bindings
+
+        declared = _bindings.get_action(str(event))
+    except Exception:  # noqa: BLE001 - a broken registry must not open the gate
+        declared = None
+    if declared is not None:
+        try:
+            bound = _bindings.bind(declared, context, operation_id=action_id)
+            binding = bound.record()
+            if declared.per_hour and _recent_count(declared.name) >= declared.per_hour:
+                rejected = f"rate limit: {declared.per_hour} per hour for {declared.name}"
+        except _bindings.ParamError as exc:
+            rejected = f"invalid params: {exc}"
+            binding = {"action": declared.name, "tool": declared.tool, "risk": declared.risk,
+                       "title": declared.title}
+        gated = rejected is None
+        reason = rejected or f"declared action ({declared.risk} risk)"
+    else:
+        gated, reason = classify(event, context, definition_contexts(surface, str(event)))
     entry = _append(
         {
             "type": "action",
-            "action_id": "act-" + uuid.uuid4().hex[:12],
+            "action_id": action_id,
             "session_id": _clean(session_id),
             "surface_id": _clean(surface_id),
             "event": _clean(event)[:120],
@@ -415,8 +501,13 @@ def log_action(
             "client_timestamp": _clean(client_timestamp)[:64] if client_timestamp else None,
             "requires_confirmation": gated,
             "reason": reason,
+            "binding": binding,
+            "rejected": rejected,
         }
     )
+    if gated and binding and binding.get("auto_approve"):
+        _append({"type": "decision", "action_id": action_id, "decision": "approved",
+                 "source": "policy:auto_approve"})
     if gated:
         # A newer click on the same control replaces any older unresolved one.
         for old in session_actions(session_id):
@@ -474,6 +565,14 @@ def observe_user_message(session_id: str | None, text: Any) -> list[dict[str, An
             return []
     elif verdict == "yes" and len(pending) > 1:
         return []
+    elif verdict == "yes":
+        high = [a for a in pending if (a.get("binding") or {}).get("risk") == "high"]
+        if high:
+            # A bare "yes" may answer some other question. High-risk declared
+            # actions need the code, so the yes is unmistakably about them.
+            for act in high:
+                _append({"type": "note", "action_id": act["action_id"], "note": "needs_code"})
+            return []
     decided = []
     excerpt = _clean(text).strip()[:80]
     for act in pending:
@@ -498,6 +597,18 @@ def complete_action(action_id: Any, outcome: Any) -> dict[str, Any]:
         raise GateError("unknown_action", "No such action_id in the audit log.",
                         "Use the action_id quoted in the action notice.")
     status = act["status"]
+    if act.get("binding") and act.get("rejected") is None and outcome in ("done", "failed"):
+        raise GateError(
+            "recorded_automatically",
+            f"Action {action_id} is a declared action; its outcome is recorded from the tool call.",
+            "Do not report done or failed. Update the card to show the status the notice gave you.",
+        )
+    if act.get("binding") and status in ("executing", "unknown"):
+        raise GateError(
+            "already_running",
+            f"Action {action_id} is {status}; it can no longer be cancelled from the card.",
+            "Tell the user the current status. For unknown, ask them to check before trying again.",
+        )
     if status in ("completed", "failed", "cancelled"):
         raise GateError("already_resolved", f"Action {action_id} is already {status}.",
                         "Each approval is single-use.")
@@ -529,6 +640,28 @@ def public_view(act: dict[str, Any]) -> dict[str, Any]:
         "status": act["status"],
         "decision_by": act["decision_by"],
         "outcome": act["outcome"],
+        "binding": _binding_view(act),
+        "rejected": act.get("rejected"),
+        "error_type": act.get("error_type"),
+        "needs_code": "needs_code" in (act.get("notes") or []),
+    }
+
+
+def _binding_view(act: dict[str, Any]) -> dict[str, Any] | None:
+    """What a card or the audit view may show: no raw secret-looking values."""
+    b = act.get("binding")
+    if not isinstance(b, dict):
+        return None
+    from uirizz_plugin.bindings import redact
+
+    return {
+        "action": b.get("action"),
+        "title": _clean(b.get("title"))[:300],
+        "tool": b.get("tool"),
+        "args": redact(b.get("args")) if "args" in b else None,
+        "risk": b.get("risk"),
+        "auto_approve": bool(b.get("auto_approve")),
+        "code_required": b.get("risk") == "high",
     }
 
 
@@ -552,6 +685,10 @@ def audit_view(
     }
 
 
+def _call_json(b: dict[str, Any]) -> str:
+    return _CTRL.sub(" ", json.dumps(b.get("args"), ensure_ascii=False, sort_keys=True))
+
+
 def gate_notice(session_id: str | None) -> str | None:
     """Text for the model about actions that need, or just got, a decision."""
     if not isinstance(session_id, str) or not session_id:
@@ -560,48 +697,208 @@ def gate_notice(session_id: str | None) -> str | None:
     for act in session_actions(session_id):
         status = act["status"]
         aid = act["action_id"]
+        b = act.get("binding") if isinstance(act.get("binding"), dict) else None
         head = (
             f"Approval gate: action_id={aid} code={_short(aid)} surface_id={_clean(act['surface_id'])} "
             f"event={_clean(act['event'])}"
         )
-        if status == "pending_confirmation":
+        if b:
+            head += f" declared_action={_clean(b.get('action'))} risk={_clean(b.get('risk'))}"
+        if status == "rejected" and not act["outcome_announced"]:
+            _append({"type": "outcome_announced", "action_id": aid})
+            parts.append(
+                f"{head} status=rejected ({_clean(act.get('rejected'))[:300]}). Nothing will run. "
+                "Fix the card's Event context or tell the user why; see op=describe topic=actions."
+            )
+        elif status == "pending_confirmation":
             if not act["announced"]:
                 mark_announced(aid)
-            parts.append(
-                f"{head} status=pending_confirmation. The user's card click is a request, not "
-                "approval. Do NOT perform the side effect and do not call tools other than "
-                f"a2ui_render. Update the same surface to show a confirm step naming exactly what "
-                f"will happen, and ask the user to reply yes (or 'yes {_short(aid)}') or no in chat. "
-                "Only the user's typed chat reply counts."
-            )
+            if b:
+                reply = f"yes {_short(aid)}" if b.get("risk") == "high" else "yes"
+                extra = ""
+                if "needs_code" in (act.get("notes") or []):
+                    extra = " The user replied yes without the code; high-risk actions need the code. "
+                parts.append(
+                    f"{head} status=pending_confirmation. The card shows uirizz's own confirm panel: "
+                    f"\"{_clean(b.get('title'))}\" (tool {_clean(b.get('tool'))}).{extra} Tell the user "
+                    f"exactly that, and ask them to reply `{reply}` or `no` in chat. Do NOT call "
+                    "other tools; a click is not approval."
+                )
+            else:
+                parts.append(
+                    f"{head} status=pending_confirmation. The user's card click is a request, not "
+                    "approval. Do NOT perform the side effect and do not call tools other than "
+                    f"a2ui_render. Update the same surface to show a confirm step naming exactly what "
+                    f"will happen, and ask the user to reply yes (or 'yes {_short(aid)}') or no in chat. "
+                    "Only the user's typed chat reply counts."
+                )
         elif status == "approved" and act["outcome"] is None:
-            parts.append(
-                f"{head} status=approved. The user typed an explicit yes. Carry out only this one "
-                "action, once, within the user's original request and safety limits, then call "
-                f"a2ui_render op=update with action_id={aid} and action_outcome=done (or failed)."
-            )
+            if b:
+                parts.append(
+                    f"{head} status=approved. Call tool `{_clean(b.get('tool'))}` once with exactly "
+                    f"these arguments: {_call_json(b)}. Any other tool or argument is blocked until it "
+                    "runs. uirizz records the result itself; do not report action_outcome. To drop it "
+                    f"instead, call a2ui_render op=update with action_id={aid} action_outcome=cancelled."
+                )
+            else:
+                parts.append(
+                    f"{head} status=approved. The user typed an explicit yes. Carry out only this one "
+                    "action, once, within the user's original request and safety limits, then call "
+                    f"a2ui_render op=update with action_id={aid} and action_outcome=done (or failed)."
+                )
         elif status == "denied" and act["outcome"] is None:
-            parts.append(
-                f"{head} status=denied. The user said no. Do nothing; call a2ui_render op=update "
-                f"with action_id={aid} and action_outcome=cancelled and show it cancelled."
-            )
+            if b:
+                if not act["outcome_announced"]:
+                    _append({"type": "outcome_announced", "action_id": aid})
+                    parts.append(
+                        f"{head} status=denied. The user said no. Nothing runs. Do not ask again "
+                        "unless the user brings it up; update the card to show it was cancelled."
+                    )
+            else:
+                parts.append(
+                    f"{head} status=denied. The user said no. Do nothing; call a2ui_render op=update "
+                    f"with action_id={aid} and action_outcome=cancelled and show it cancelled."
+                )
+        elif b and status in ("completed", "failed", "unknown") and not act["outcome_announced"]:
+            _append({"type": "outcome_announced", "action_id": aid})
+            if status == "completed":
+                tail = "The tool call succeeded. Update the card to show it is done."
+            elif status == "failed":
+                tail = (f"The tool call failed ({_clean(act.get('error_type') or 'error')}). Update the "
+                        "card and tell the user; do not retry without a new click and approval.")
+            else:
+                tail = ("The outcome is unknown (cancelled or no result). Do not retry; ask the user to "
+                        "check the target system first.")
+            parts.append(f"{head} status={status}. {tail}")
     if not parts:
         return None
     return _CTRL.sub(" ", " ".join(parts))
 
 
-def tool_block_message(session_id: str | None, tool_name: Any) -> str | None:
-    """A veto message if a pending confirmation forbids this tool right now."""
+def tool_block_message(
+    session_id: str | None,
+    tool_name: Any,
+    args: Any = None,
+    tool_call_id: Any = None,
+    *,
+    has_args: bool | None = None,
+) -> str | None:
+    """A veto message if the gate forbids this tool call right now, else None.
+
+    * While any action waits for the user's yes, only safe tools run.
+    * While a declared action is approved, only its exact bound call runs, once
+      (the check and the "consumed" record are one atomic step).
+    * An exact replay of a bound call that already ran, or that the user
+      denied, is blocked for the approval window.
+    """
     name = tool_name if isinstance(tool_name, str) else ""
     if name in SAFE_TOOLS_WHILE_PENDING:
         return None
-    for act in session_actions(session_id if isinstance(session_id, str) and session_id else None):
-        if act["status"] == "pending_confirmation":
+    sid = session_id if isinstance(session_id, str) and session_id else None
+    if has_args is None:
+        has_args = args is not None
+    with _lock:
+        acts = session_actions(sid)
+        for act in acts:
+            if act["status"] == "pending_confirmation":
+                return (
+                    "BLOCKED by the uirizz approval gate: the card action "
+                    f"'{_clean(act['event'])}' (code {_short(act['action_id'])}) is waiting for the "
+                    "user's explicit yes in chat. A card click is not approval. Show a confirm step "
+                    "with a2ui_render and wait for the user to type yes or no. Tool "
+                    f"'{_clean(name)}' stays blocked until they answer or the request expires."
+                )
+        if sid is None:
+            return None
+        from uirizz_plugin.bindings import call_hash
+
+        digest = call_hash(name, args) if has_args else None
+        approved = [a for a in acts if a["status"] == "approved" and isinstance(a.get("binding"), dict)
+                    and a["binding"].get("args_hash")]
+        for act in approved:
+            b = act["binding"]
+            if name == b.get("tool") and digest == b.get("args_hash"):
+                _append({"type": "consumed", "action_id": act["action_id"],
+                         "tool_call_id": _clean(tool_call_id)[:120] if tool_call_id else None,
+                         "args_hash": digest})
+                return None
+        if approved:
+            b = approved[0]["binding"]
+            aid = approved[0]["action_id"]
+            if not has_args:
+                why = "this host did not pass the tool arguments, so the approved call cannot be verified"
+            elif name == b.get("tool"):
+                why = "the arguments differ from what the user approved"
+            else:
+                why = f"the user approved one call to '{_clean(b.get('tool'))}' and it has not run yet"
             return (
-                "BLOCKED by the uirizz approval gate: the card action "
-                f"'{_clean(act['event'])}' (code {_short(act['action_id'])}) is waiting for the "
-                "user's explicit yes in chat. A card click is not approval. Show a confirm step "
-                "with a2ui_render and wait for the user to type yes or no. Tool "
-                f"'{_clean(name)}' stays blocked until they answer or the request expires."
+                f"BLOCKED by the uirizz approval gate: {why}. Call '{_clean(b.get('tool'))}' with exactly "
+                f"{_call_json(b)}, or cancel it with a2ui_render op=update action_id={aid} "
+                "action_outcome=cancelled. Changing the call needs a new click and a new yes."
             )
+        if digest is not None:
+            now = _now()
+            for act in acts:
+                b = act.get("binding")
+                if (isinstance(b, dict) and act["status"] in _NO_REPLAY and name == b.get("tool")
+                        and digest == b.get("args_hash")
+                        and now - float(act.get("decided_t") or act.get("_t") or 0) <= APPROVAL_TTL_S):
+                    return (
+                        f"BLOCKED by the uirizz approval gate: this exact call was already "
+                        f"{act['status']} for action {act['action_id']}. Each approval runs once; a new "
+                        "attempt needs a new click and the user's yes."
+                    )
     return None
+
+
+_RESULT_STATUS = {"ok": "completed", "success": "completed", "error": "failed", "cancelled": "unknown"}
+
+
+def record_tool_result(
+    session_id: str | None,
+    tool_name: Any,
+    args: Any = None,
+    tool_call_id: Any = None,
+    status: Any = None,
+    error_type: Any = None,
+    *,
+    has_args: bool | None = None,
+) -> dict[str, Any] | None:
+    """post_tool_call: close the bound call that pre_tool_call let through.
+
+    ok -> completed, error -> failed, cancelled -> unknown (it may have run),
+    blocked (a later hook vetoed it) -> released back to approved.
+    """
+    name = tool_name if isinstance(tool_name, str) else ""
+    sid = session_id if isinstance(session_id, str) and session_id else None
+    if sid is None or not name or name in SAFE_TOOLS_WHILE_PENDING:
+        return None
+    if has_args is None:
+        has_args = args is not None
+    from uirizz_plugin.bindings import call_hash
+
+    digest = call_hash(name, args) if has_args else None
+    call_id = _clean(tool_call_id)[:120] if tool_call_id else None
+    with _lock:
+        executing = [a for a in session_actions(sid) if a["status"] == "executing"
+                     and isinstance(a.get("binding"), dict) and a["binding"].get("tool") == name]
+        match = None
+        if call_id:
+            match = next((a for a in executing if a.get("tool_call_id") == call_id), None)
+        if match is None and digest is not None:
+            match = next((a for a in executing if a["binding"].get("args_hash") == digest), None)
+        if match is None:
+            return None
+        aid = match["action_id"]
+        st = str(status or "").lower()
+        if st == "blocked":
+            _append({"type": "released", "action_id": aid})
+            return {"action_id": aid, "status": "approved"}
+        result = _RESULT_STATUS.get(st, "unknown")
+        if digest is not None and digest != match["binding"].get("args_hash"):
+            # Something rewrote the arguments after the gate checked them.
+            result = "unknown"
+            error_type = "args_changed_after_approval"
+        _append({"type": "executed", "action_id": aid, "result_status": result,
+                 "error_type": _clean(error_type)[:80] if error_type else None})
+        return {"action_id": aid, "status": result}

@@ -7,7 +7,7 @@ later `op=update` can send only the new data.
 
 Contents: 1 Status / KPI · 2 Compare options · 3 Form that submits ·
 4 Pick one and continue · 5 Result list · 6 Confirm step (approval gate) ·
-7 Progress monitor · 8 Peer views with Tabs · Updates
+7 Progress monitor · 8 Peer views with Tabs · 9 Declared action · Updates
 
 ## 1. Status / KPI board
 
@@ -105,6 +105,20 @@ root = Tabs([{title: "Summary", child: summary}, {title: "Timeline", child: time
 summary = Text("Checkout 502s for 14 min after deploy v24. Rolled back at 14:21.")
 timeline = Column([Text("14:02 deploy v24"), Text("14:07 alerts fire"), Text("14:21 rollback done")])
 next = Column([CheckBox("Add canary stage", false), CheckBox("Alert on p95 > 300 ms", false)])
+```
+
+## 9. Declared action button
+
+Use for: a button that should run a real tool the user has declared in their
+actions file (`op=describe topic=actions` lists them). Use only listed action
+names and params; bind form inputs as `$/path`. Markers are optional here: the
+declaration sets the risk.
+
+```express
+$/release = {version: "v24"}
+root = Card(Column([Text("## Ship checkout-api"), TextField("Version", $/release/version), Row([staging, prod])]))
+staging = Button(Text("Deploy to staging"), action=Event("deploy_service", {service: "checkout-api", version: $/release/version, env: "staging", side_effect: true}))
+prod = Button(Text("Deploy to production"), "primary", Event("deploy_service", {service: "checkout-api", version: $/release/version, env: "production", side_effect: true}))
 ```
 
 ## Updates

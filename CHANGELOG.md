@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Declared actions: `actions.yaml` (or `register_action`) binds a card button
+  to one exact Hermes tool call. Params are validated on click; uirizz renders
+  its own confirm panel; approval covers that tool name plus a hash of its
+  canonical arguments; `pre_tool_call` lets only that call through, once
+  (atomic); `post_tool_call` records completed / failed / unknown. Risk tiers
+  (`low` + optional `auto_approve`, `medium`, `high` needing `yes <code>`),
+  per-hour limits, replay blocking, detection of arguments rewritten after
+  approval, `op=describe topic=actions`, present-time warnings, and
+  `python -m uirizz_plugin.bindings check`. See docs/ACTIONS.md.
 - `op=describe topic=recipes|express` and `skills/uirizz/references/`: eight
   tested Express recipes and a cheat sheet, compiled in CI.
 - `evals/behavior_scenarios.json`: model-in-the-loop scenarios and checks.

@@ -85,6 +85,12 @@ divisions). Max 100 components, 256 KiB. Worked example: `references/layout.md`.
   open); `side_effect: true` for deploy, send, delete, pay, post. Unmarked
   clicks are gated.
 - Inputs reach you only via the context: `Event("send", {email: $/form/email, side_effect: true})`.
+- **Declared actions** (`op=describe topic=actions`) bind a button to one exact
+  tool call: `Event("deploy_service", {env: "production", version: $/form/v})`.
+  Use only listed names and params. uirizz shows its own confirm panel; relay
+  its title and the reply it asks for (`yes <code>` for high risk). After
+  approval call exactly the tool and args the notice gives, once; the outcome
+  is recorded for you, so do not send `action_outcome`.
 - On `Approval gate: ... status=pending_confirmation`: do not act (other tools
   are blocked); `op=update` the card into a confirm step saying exactly what
   will happen and ask for `yes` or `no` in chat, with no Confirm button. After

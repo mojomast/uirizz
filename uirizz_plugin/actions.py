@@ -63,7 +63,15 @@ def record_action(
     rec["action_id"] = entry["action_id"]
     rec["requires_confirmation"] = bool(entry["requires_confirmation"])
     rec["gate_reason"] = entry["reason"]
-    rec["status"] = "pending_confirmation" if rec["requires_confirmation"] else "recorded"
+    rec["declared"] = entry.get("binding") is not None
+    # Read the folded state so auto-approved and rejected clicks report truthfully.
+    folded = next((a for a in gate.session_actions(session_id) if a["action_id"] == entry["action_id"]), None)
+    if folded is not None:
+        rec["status"] = folded["status"]
+        rec["binding"] = gate.public_view(folded)["binding"]
+        rec["rejected"] = folded.get("rejected")
+    else:
+        rec["status"] = "pending_confirmation" if rec["requires_confirmation"] else "recorded"
     bucket = _PENDING.setdefault(session_id, [])
     bucket.append(rec)
     return rec
@@ -72,9 +80,9 @@ def record_action(
 def _format_context(actions: list[dict[str, Any]]) -> str:
     parts: list[str] = []
     for rec in actions:
-        if rec.get("requires_confirmation", False):
-            # Gated clicks are described by the approval gate, never as a plain
-            # "go update the card" instruction.
+        if rec.get("requires_confirmation", False) or rec.get("declared", False):
+            # Gated and declared-action clicks are described by the approval
+            # gate, never as a plain "go update the card" instruction.
             continue
         event = _sanitize_text(rec.get("event"))
         ctx = _sanitize_context(rec.get("context"))

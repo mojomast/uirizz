@@ -9,7 +9,9 @@ description: >-
   reuse a stable surface_id. Clicks are structured actions that are logged to an audit
   log; a click is never approval, and a side effect needs the user's typed yes
   in chat (pre_tool_call vetoes other tools until then). The card stays
-  editable. Does not register transform_llm_output, so it can run beside
+  editable. Declared actions (actions.yaml) bind a button to one exact tool
+  call: approval covers that call only, pre_tool_call lets it run once, and
+  post_tool_call records the outcome. Does not register transform_llm_output, so it can run beside
   hermes-a2ui. Disclosure: no credentials, no subprocesses, no network except
   loading already-admitted public https images through the host once that path
   lands. Surfaces are stored in the plugin data directory. Classic dashboard
@@ -30,5 +32,6 @@ provides_tools:
 provides_hooks:
   - pre_llm_call
   - pre_tool_call
+  - post_tool_call
 provides_middleware: []
 requires_env: []

@@ -82,8 +82,8 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
             },
             "topic": {
                 "type": "string",
-                "enum": ["recipes", "express"],
-                "description": "With op=describe: recipes or Express cheat sheet.",
+                "enum": ["recipes", "express", "actions"],
+                "description": "With op=describe: recipes, Express cheat sheet, or declared actions.",
             },
             "action_id": {
                 "type": "string",
@@ -92,7 +92,7 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
             "action_outcome": {
                 "type": "string",
                 "enum": ["done", "failed", "cancelled"],
-                "description": "done/failed need status=approved (the user's typed yes).",
+                "description": "done/failed need status=approved (the user's typed yes); declared actions record their own.",
             },
             "limit": {
                 "type": "integer",
@@ -127,17 +127,30 @@ def _error(code: str, error: str, fix: str, **extra: Any) -> str:
 
 
 _REFERENCES = Path(__file__).resolve().parent.parent / "skills" / "uirizz" / "references"
-DESCRIBE_TOPICS = {"recipes": "recipes.md", "express": "express.md"}
+DESCRIBE_TOPICS = {"recipes": "recipes.md", "express": "express.md", "actions": None}
+
+_ACTIONS_HOWTO = (
+    "Declared actions bind a button to one exact tool call. Wire one with "
+    "Event(\"<action>\", {<param>: <value or $/path>}); no side_effect marker is needed. "
+    "uirizz validates the params on click, shows its own confirm panel, and after the "
+    "user's typed yes (\"yes <code>\" for risk high) lets only that call run, once. "
+    "Outcomes are recorded automatically. Only actions listed here exist; never invent one."
+)
 
 
 def describe_topic(topic: str) -> dict[str, Any]:
     """Return a bundled reference file, so the model never depends on skill_view paths."""
+    if topic == "actions":
+        from uirizz_plugin import bindings
+
+        report = bindings.status_report()
+        return {"ok": True, "op": "describe", "topic": "actions", "howto": _ACTIONS_HOWTO, **report}
     name = DESCRIBE_TOPICS.get(topic)
     if name is None:
         raise AdmissionError(
             "invalid_payload",
             f"Unknown describe topic {topic!s}.",
-            "Use topic=recipes or topic=express, or omit topic.",
+            "Use topic=recipes, topic=express or topic=actions, or omit topic.",
         )
     path = _REFERENCES / name
     if not path.is_file():
@@ -188,6 +201,10 @@ def describe_payload() -> dict[str, Any]:
             "ttl_seconds": gate.APPROVAL_TTL_S,
             "tools_allowed_while_pending": sorted(gate.SAFE_TOOLS_WHILE_PENDING),
             "report": "op=update with action_id and action_outcome=done|failed|cancelled",
+            "declared_actions": (
+                "op=describe topic=actions lists buttons bound to one exact tool call. After the "
+                "user's yes only that call runs, once; post_tool_call records the outcome."
+            ),
         },
         "layout": {
             "default": "Weighted Row/Column children fill the card width; no grid.",
@@ -202,6 +219,7 @@ def describe_payload() -> dict[str, Any]:
         "topics": {
             "recipes": "op=describe topic=recipes: tested Express for status, compare, form, pick, list, confirm, progress, tabs",
             "express": "op=describe topic=express: grammar, signatures, icon names, gotchas",
+            "actions": "op=describe topic=actions: buttons bound to exact tool calls (deploy, send, ...)",
         },
     }
 
@@ -269,11 +287,25 @@ def _write_media(surface_id: str, fallback_text: str) -> str:
     return str(path)
 
 
-def _success(op: str, record: dict[str, Any]) -> str:
+def _action_warnings(messages: list[dict[str, Any]]) -> list[str]:
+    try:
+        from uirizz_plugin.bindings import surface_warnings
+
+        return surface_warnings(messages)
+    except Exception:  # noqa: BLE001 - warnings are advisory
+        return []
+
+
+def _success(op: str, record: dict[str, Any], warnings: list[str] | None = None) -> str:
     media_path = _write_media(record["surface_id"], record["fallback_text"])
     media_tag = f"MEDIA: {media_path}"
+    extra: dict[str, Any] = {}
+    if warnings:
+        extra["action_warnings"] = warnings
+        extra["action_fix"] = "These buttons will be rejected when clicked. See op=describe topic=actions."
     body = _dumps(
         {
+            **extra,
             "ok": True,
             "op": op,
             "surface_id": record["surface_id"],
@@ -356,7 +388,7 @@ def _op_present(payload: dict[str, Any]) -> str:
         "component_ids": admitted["component_ids"],
     }
     put_surface(record)
-    return _success("present", record)
+    return _success("present", record, _action_warnings(record["messages"]))
 
 
 def _op_update(payload: dict[str, Any]) -> str:
@@ -387,7 +419,7 @@ def _op_update(payload: dict[str, Any]) -> str:
         "component_ids": admitted["component_ids"] or existing.get("component_ids", []),
     }
     put_surface(record)
-    return _success("update", record)
+    return _success("update", record, _action_warnings(_rebind(admitted["messages"], surface_id, update=True)))
 
 
 def _op_delete(payload: dict[str, Any]) -> str:

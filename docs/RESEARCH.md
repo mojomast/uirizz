@@ -504,3 +504,66 @@ Known renderer issues seen: `Icon` names render as literal ligature text
 (Material Symbols font not loaded), so use glyph `Text`; `Slider` with a
 non-zero `min` (1..12) drew its thumb at the left edge for value 3 (not
 root-caused). Neither is a uirizz bug.
+
+## 11. Approval for real actions (declared actions)
+
+Researched on 23 November 2026 for the declared-actions feature
+([docs/ACTIONS.md](ACTIONS.md)). Sources were open that day.
+
+### 11.1 What current practice asks for
+
+- **Bind approval to a specific call.** Agent SDKs attach approval to a tool
+  call, not to a conversation or an intent. The OpenAI Agents SDK lets
+  `needs_approval` decide per call from the run context, the parsed tool
+  parameters, and the call id
+  ([OpenAI Agents SDK, human-in-the-loop](https://openai.github.io/openai-agents-python/human_in_the_loop/)).
+  The Vercel AI SDK pauses a tool with `needsApproval` until the user approves
+  or denies it ([AI SDK tool approval](https://chatbot.ai-sdk.dev/docs/customization/tool-approval)).
+- **Server-enforced, argument-bound, single-use.** Vercel's guidance binds
+  each pending approval to the user, conversation, tool call, exact validated
+  arguments, and an expiry. It requires a new review whenever the action or
+  its arguments change, enforcement at the real execution boundary, rejection
+  of altered, expired, unknown or consumed approvals, and atomic handling of
+  concurrent submissions
+  ([Add human approval before your agent takes action](https://vercel.com/kb/prompts/add-human-approval-to-agent-actions), updated 7 Nov 2026).
+  The same page: a denial runs nothing and must not trigger a re-request;
+  give external writes a stable operation id for the destination's
+  idempotency; when a timeout leaves the outcome unknown, show a
+  reconciliation state instead of retrying blindly.
+- **Least agency.** OWASP LLM06 (Excessive Agency) names excessive
+  functionality, permissions and autonomy as root causes. It recommends narrow
+  extensions over open-ended ones, and human approval for high-impact actions
+  inside the extension that performs them
+  ([OWASP LLM06:2025](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)).
+
+### 11.2 What Hermes provides (verified in its docs)
+
+- `pre_tool_call` receives `tool_name`, `args`, `task_id`, `session_id`,
+  `tool_call_id`, `turn_id`, `api_request_id`. It may return
+  `{"action": "block", "message": ...}`, or `{"action": "modify", "args": ...}`
+  to rewrite arguments.
+- `post_tool_call` has the same identity fields plus `result`, `duration_ms`,
+  `status`, `error_type`, `error_message`. Common `status` values are `ok`,
+  `error`, `blocked` (a `pre_tool_call` hook vetoed it) and `cancelled`. It is
+  emitted for blocked and cancelled paths too
+  ([Hermes observer hooks](https://hermes-agent.nousresearch.com/docs/developer-guide/observer-hooks)).
+
+### 11.3 uirizz decisions
+
+| Practice | uirizz |
+|---|---|
+| Approval bound to exact arguments | Tool name + SHA-256 of canonical JSON args, stored in the hash-chained log |
+| New review when args change | Different args are blocked; changing them needs a new click and yes |
+| Enforced at the execution boundary | `pre_tool_call` allows only the bound call while the approval is open |
+| Single-use, atomic | Check and "consumed" record happen under one lock; replays are blocked |
+| Expiry | Unchanged 10-minute window; an unused approval expires |
+| Denial runs nothing, no re-ask | The exact denied call is blocked; the model is told not to ask again |
+| Unknown outcome | `cancelled` or no report within 1 h → `unknown`; the model is told not to retry |
+| Idempotency | `{operation_id}` template variable = stable action id |
+| Trustworthy confirm text | The card's confirm panel comes from the definition, not the model |
+| Least agency | Typed `params` with enums, patterns and bounds; per-hour limits; `high` needs `yes <code>` |
+| `modify` by another plugin | Detected in `post_tool_call` → `unknown`, `args_changed_after_approval` |
+
+Not done here: dry-run previews (the plugin cannot call tools itself, so a
+preview would need the model to make a second, read-only call) and approval
+from another device or channel.

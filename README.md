@@ -86,7 +86,7 @@ flowchart LR
 | `present` | Create a surface. Optional `surface_id` (minted if omitted). Requires `fallback_text` and either `express` (preferred) or `jsonl`. |
 | `update` | Patch the same `surface_id`. Express is compiled against the stored surface, so `$/kpi/rps = 42` alone becomes an `updateDataModel`. |
 | `delete` | Remove a `surface_id`. |
-| `describe` | Catalog, limits, media policy, and the approval-gate contract. `topic=recipes` returns tested Express recipes; `topic=express` the cheat sheet. |
+| `describe` | Catalog, limits, media policy, and the approval-gate contract. `topic=recipes` returns tested Express recipes; `topic=express` the cheat sheet; `topic=actions` the declared actions. |
 | `audit` | Recent entries from the hash-chained action log. |
 
 After a successful `present`, copy the `MEDIA:` line from the tool result, alone on its own line, into the model reply. After an `update` the mounted card refreshes itself, and the model is told not to paste the line again. Compile errors carry the Express compiler's own message (line, column, allowed values) so the model can fix the exact line.
@@ -102,6 +102,33 @@ A card click is a **request, never approval**.
 - The log is append-only and hash-chained under the plugin data directory (`audit/actions.jsonl`).
 
 The plugin declares no credentials and no `requires_env`. It starts no runtime subprocesses. Media must be public `https` (no `http`, `data:`, or local files). Surface records live in the Hermes plugin data directory, not the install checkout. The Desktop half uses only `@hermes/plugin-sdk` and `ctx.rest`. The gate cannot see what a tool does outside Hermes, and card text is still model-authored.
+
+## Declared actions
+
+Wire a card button to a real tool with a few lines of config. A declared
+action binds a click to **one exact Hermes tool call**: params are validated,
+uirizz draws its own confirm panel, the user's typed yes (`yes <code>` for
+high risk) approves that call only, `pre_tool_call` lets it run once, and
+`post_tool_call` records the outcome.
+
+```yaml
+# ~/.hermes/plugin-data/uirizz/actions.yaml
+actions:
+  deploy_service:
+    title: "Deploy {service} {version} to {env}"
+    tool: mcp_github_dispatch_workflow
+    args: {repo: "acme/{service}", inputs: {version: "{version}", env: "{env}"}}
+    params:
+      service: {type: string, enum: [checkout-api, search-api]}
+      version: {type: string, pattern: "^v[0-9]+$"}
+      env: {type: string, enum: [staging, production]}
+    risk: high
+```
+
+Risk tiers (`low` with optional `auto_approve`, `medium`, `high`), per-hour
+limits, replay and argument-tampering protection, and a plugin API are covered
+in [docs/ACTIONS.md](docs/ACTIONS.md). Validate a file with
+`python -m uirizz_plugin.bindings check`.
 
 ## Layout tips
 

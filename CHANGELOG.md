@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Express presents without `surface_id` no longer collide on the compiler's
+  default id `main`; a fresh id is minted.
+- Express compile errors return the compiler's message (line, column, allowed
+  values) so the model can fix the exact line.
+- Data-only Express updates (`$/path = value`) compile against the stored
+  surface and become `updateDataModel` instead of failing.
+- Non-gated card clicks are injected into the next turn once, not every turn.
+- `references/layout.md` example did not compile (children outside lists,
+  `"${/path}"` used as a binding); rewritten and now compiled in CI.
+
+### Added
+
+- `op=describe topic=recipes|express` and `skills/uirizz/references/`: eight
+  tested Express recipes and a cheat sheet, compiled in CI.
+- `evals/behavior_scenarios.json`: model-in-the-loop scenarios and checks.
+- `docs/IMPROVEMENTS.md`: review findings and next steps.
+
+### Changed
+
+- Skill rewritten around a card-or-prose decision rule, a reply contract,
+  Express gotchas, form context binding, and data-only updates.
+- Tool description now carries the trigger and points at the skill, since
+  plugin skills are not listed in the Hermes skill index.
+
 ## [0.1.0] — 2026-11-23
 
 First tagged-ready release of the uirizz Hermes plugin (A2UI v1.0 Basic

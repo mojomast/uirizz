@@ -83,13 +83,13 @@ flowchart LR
 
 | Op | Purpose |
 |---|---|
-| `present` | Create a surface. Optional `surface_id`. Requires `fallback_text` and either `express` (preferred) or `jsonl`. |
-| `update` | Patch the same `surface_id`. Prefer a data-model-only `updateDataModel` payload. |
+| `present` | Create a surface. Optional `surface_id` (minted if omitted). Requires `fallback_text` and either `express` (preferred) or `jsonl`. |
+| `update` | Patch the same `surface_id`. Express is compiled against the stored surface, so `$/kpi/rps = 42` alone becomes an `updateDataModel`. |
 | `delete` | Remove a `surface_id`. |
-| `describe` | Catalog, limits, media policy, and the approval-gate contract. |
+| `describe` | Catalog, limits, media policy, and the approval-gate contract. `topic=recipes` returns tested Express recipes; `topic=express` the cheat sheet. |
 | `audit` | Recent entries from the hash-chained action log. |
 
-After a successful call, copy the `MEDIA:` line from the tool result, alone on its own line, into the model reply.
+After a successful `present`, copy the `MEDIA:` line from the tool result, alone on its own line, into the model reply. After an `update` the mounted card refreshes itself, and the model is told not to paste the line again. Compile errors carry the Express compiler's own message (line, column, allowed values) so the model can fix the exact line.
 
 ## Approval and security
 
@@ -105,7 +105,7 @@ The plugin declares no credentials and no `requires_env`. It starts no runtime s
 
 ## Layout tips
 
-Compose wide: wrap the surface in a `Column` and give `Row`/`Column` children a `weight`. KPI row: 3–5 `Card`s at `weight=1`. Master/detail: `2:3`. Prefer `updateDataModel` after the first `present`. The bundled skill (`uirizz:uirizz`) plus [skills/uirizz/references/layout.md](skills/uirizz/references/layout.md) have a worked Express example.
+Compose wide: wrap the surface in a `Column` and give `Row`/`Column` children a `weight`. KPI row: 3–5 `Card`s at `weight=1`. Master/detail: `2:3`. Prefer `updateDataModel` after the first `present`. The bundled skill (`uirizz:uirizz`) links [tested recipes](skills/uirizz/references/recipes.md), an [Express cheat sheet](skills/uirizz/references/express.md), and a [worked layout](skills/uirizz/references/layout.md); CI compiles every example.
 
 ![A fictional clinic form with a live summary of exactly what would be sent](docs/screenshots/private-form.png)
 

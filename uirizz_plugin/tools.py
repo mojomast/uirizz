@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from uirizz_plugin import express as express_mod
@@ -45,15 +46,15 @@ __all__ = [
 A2UI_RENDER_SCHEMA: dict[str, Any] = {
     "name": TOOL_NAME,
     "description": (
-        "Present, update, delete, describe, or audit an A2UI v1.0 surface in this chat. "
-        "Official Basic Catalog only. Never use shell, code, gh, or git to build the card. "
-        "After success, copy the result's MEDIA: line alone on its own line into your reply: Desktop "
-        "and Webapp draw the card from it; CLI, Telegram, and the classic dashboard show fallback_text only. "
-        "fallback_text is required on present. Call op=describe for catalog, limits, and policy. "
-        "Prefer Express; otherwise send v1.0 JSONL. Use weighted Row/Column layouts. "
-        "Reuse surface_id with op=update (prefer updateDataModel) instead of a new card. "
-        "A click is not approval. Never pass local file paths or http/data image URLs. "
-        "On error, read code and fix and retry."
+        "Draw a live A2UI card in Desktop/Webapp chat when the user will scan, compare, "
+        "fill in, pick or watch structured data (status, comparison, form, list, progress, "
+        "confirm). Not for prose, code or one-line answers. Never use shell, code, gh or git "
+        "to build a card. First use: skill_view('uirizz:uirizz'); op=describe topic=recipes "
+        "has tested Express. present needs fallback_text; then put the result's MEDIA: line "
+        "alone in your reply. Same view: op=update on that surface_id (data-only `$/path = "
+        "value` lines become updateDataModel); never re-present. Weighted Row/Column layouts. "
+        "A click is not approval. No local paths or http/data images. On error, read code and "
+        "fix, then retry."
     ),
     "parameters": {
         "type": "object",
@@ -61,45 +62,41 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
             "op": {
                 "type": "string",
                 "enum": ["present", "update", "delete", "describe", "audit"],
-                "description": (
-                    "present: create a surface (new surface_id if omitted). "
-                    "update: patch an existing surface_id in place. "
-                    "delete: remove a surface_id. "
-                    "describe: return catalog, limits, and policy. "
-                    "audit: return the logged card actions (optional surface_id, limit)."
-                ),
+                "description": "present new card; update same card; describe catalog or topic; audit card actions.",
             },
             "surface_id": {
                 "type": "string",
-                "description": "Stable id. Optional on present; required on update and delete.",
+                "description": "Returned by present. Required on update and delete.",
             },
             "express": {
                 "type": "string",
-                "description": "Preferred A2UI Express source, compiled to v1.0. Omit if jsonl is set.",
+                "description": "A2UI Express source (preferred).",
             },
             "jsonl": {
                 "type": "string",
-                "description": "Raw A2UI v1.0 JSONL (one envelope per line) if express is omitted.",
+                "description": "Raw A2UI v1.0 JSONL, one envelope per line, if not using express.",
             },
             "fallback_text": {
                 "type": "string",
-                "description": "Required plain-text copy of the surface for non-Desktop clients.",
+                "description": "Required on present: plain-text copy with the same facts, for CLI and chat apps.",
+            },
+            "topic": {
+                "type": "string",
+                "enum": ["recipes", "express"],
+                "description": "With op=describe: recipes or Express cheat sheet.",
             },
             "action_id": {
                 "type": "string",
-                "description": "With op=update: the action_id from an action notice you are reporting on.",
+                "description": "With op=update: the action_id from an approval-gate notice.",
             },
             "action_outcome": {
                 "type": "string",
                 "enum": ["done", "failed", "cancelled"],
-                "description": (
-                    "With action_id: done or failed need the user's typed yes (status approved); "
-                    "the call is rejected otherwise. cancelled is always allowed."
-                ),
+                "description": "done/failed need status=approved (the user's typed yes).",
             },
             "limit": {
                 "type": "integer",
-                "description": "With op=audit: how many recent actions to return (max 200).",
+                "description": "With op=audit: max actions (200).",
             },
         },
         "required": ["op"],
@@ -127,6 +124,29 @@ def _error(code: str, error: str, fix: str, **extra: Any) -> str:
     body: dict[str, Any] = {"ok": False, "error": error, "code": code, "fix": fix}
     body.update(extra)
     return _dumps(body)
+
+
+_REFERENCES = Path(__file__).resolve().parent.parent / "skills" / "uirizz" / "references"
+DESCRIBE_TOPICS = {"recipes": "recipes.md", "express": "express.md"}
+
+
+def describe_topic(topic: str) -> dict[str, Any]:
+    """Return a bundled reference file, so the model never depends on skill_view paths."""
+    name = DESCRIBE_TOPICS.get(topic)
+    if name is None:
+        raise AdmissionError(
+            "invalid_payload",
+            f"Unknown describe topic {topic!s}.",
+            "Use topic=recipes or topic=express, or omit topic.",
+        )
+    path = _REFERENCES / name
+    if not path.is_file():
+        raise AdmissionError(
+            "not_found",
+            f"Reference {name} is not bundled in this install.",
+            "Call op=describe without topic.",
+        )
+    return {"ok": True, "op": "describe", "topic": topic, "text": path.read_text(encoding="utf-8")}
 
 
 def describe_payload() -> dict[str, Any]:
@@ -179,6 +199,10 @@ def describe_payload() -> dict[str, Any]:
             "slider_steps": "steps is divisions, not the increment (steps=1 on 1-12 = two stops).",
         },
         "theme": "night-hive",
+        "topics": {
+            "recipes": "op=describe topic=recipes: tested Express for status, compare, form, pick, list, confirm, progress, tabs",
+            "express": "op=describe topic=express: grammar, signatures, icon names, gotchas",
+        },
     }
 
 
@@ -205,9 +229,19 @@ def _require_fallback(payload: dict[str, Any], *, required: bool) -> str | None:
     return text
 
 
-def _jsonl_from_args(payload: dict[str, Any]) -> str:
+def _jsonl_from_args(
+    payload: dict[str, Any],
+    *,
+    prior: dict[str, Any] | None = None,
+) -> str:
     express = payload.get("express")
     if isinstance(express, str) and express.strip():
+        if prior is not None:
+            return express_mod.compile_express(
+                express,
+                prior_messages=list(prior.get("messages") or []),
+                surface_id=prior.get("surface_id"),
+            )
         return express_mod.compile_express(express)
     jsonl = payload.get("jsonl")
     if not isinstance(jsonl, str) or not jsonl.strip():
@@ -247,7 +281,11 @@ def _success(op: str, record: dict[str, Any]) -> str:
             "fallback_text": record["fallback_text"],
             "component_count": record.get("component_count", 0),
             "media": media_tag,
-            "next": "Put the MEDIA: line below, alone on its own line, in your reply so the card is drawn.",
+            "next": (
+                "Put the MEDIA: line below, alone on its own line, in your reply so the card is drawn."
+                if op == "present"
+                else "The card already in the chat refreshes itself; do not paste this MEDIA: line again."
+            ),
         }
     )
     # Desktop only mounts a tool-media renderer when a standalone MEDIA: line
@@ -293,7 +331,12 @@ def _op_present(payload: dict[str, Any]) -> str:
     assert fallback is not None
     jsonl = _jsonl_from_args(payload)
     admitted = admit_jsonl(jsonl, require_root=True)
-    requested = payload.get("surface_id") or admitted.get("surface_id")
+    # Express compiles every surface as "main". Using that as the stored id made
+    # every second present collide with the first (possibly another chat's) card.
+    # Only an explicit surface_id, or a surfaceId the model wrote in raw jsonl,
+    # is honoured; otherwise a fresh id is minted.
+    used_express = isinstance(payload.get("express"), str) and bool(payload["express"].strip())
+    requested = payload.get("surface_id") or (None if used_express else admitted.get("surface_id"))
     surface_id = normalize_surface_id(
         requested if isinstance(requested, str) else None,
         required=False,
@@ -302,7 +345,7 @@ def _op_present(payload: dict[str, Any]) -> str:
         raise StoreError(
             "invalid_payload",
             f"surface_id {surface_id} already exists.",
-            "Call op=update with this surface_id, or omit surface_id to mint a new one.",
+            "To change that card call op=update with this surface_id; for a new card omit surface_id.",
         )
     record = {
         "surface_id": surface_id,
@@ -326,7 +369,7 @@ def _op_update(payload: dict[str, Any]) -> str:
             "Call op=present first, or pass a surface_id returned by a previous present.",
         )
     fallback = _require_fallback(payload, required=False) or existing["fallback_text"]
-    jsonl = _jsonl_from_args(payload)
+    jsonl = _jsonl_from_args(payload, prior=existing)
     admitted = admit_jsonl(jsonl, require_root=False)
     # Fail-closed: reporting a side effect as done needs a live user approval.
     # Checked before anything is stored, so a rejected report changes nothing.
@@ -373,6 +416,12 @@ def handle_a2ui_render(args: dict | None) -> str:
                 "Set op to present, update, delete, describe, or audit.",
             )
         if op == "describe":
+            topic = payload.get("topic")
+            if isinstance(topic, str) and topic:
+                try:
+                    return _dumps(describe_topic(topic))
+                except AdmissionError as exc:
+                    return _fail(exc)
             return _dumps(describe_payload())
         if op == "audit":
             return _dumps(

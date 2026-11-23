@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Non-gated card clicks are injected into the next turn once, not every turn.
 - `references/layout.md` example did not compile (children outside lists,
   `"${/path}"` used as a binding); rewritten and now compiled in CI.
+- `compile_express` now normalizes `surface_id` before interpolating the
+  auto-added `surface(..., update=true)` header, and compiler error details
+  redact paths and tracebacks.
 
 ### Added
 
@@ -41,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Express gotchas, form context binding, and data-only updates.
 - Tool description now carries the trigger and points at the skill, since
   plugin skills are not listed in the Hermes skill index.
+- README how-it-works shots retaken after these fixes: two cards with
+  distinct ids, an in-place data-only update with no duplicate, compiler
+  recovery, a prose-only turn, and the approval-gate flow.
 
 ## [0.1.0] — 2026-11-23
 

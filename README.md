@@ -46,7 +46,7 @@ Requires Hermes **0.23.0** or newer and Python 3.10+.
 
 The agent calls `a2ui_render`. The plugin admits official catalog components, stores the surface, and returns a `MEDIA:` line plus `fallback_text`. A later `op=update` with `updateDataModel` changes values without redrawing the layout. A side-effect click is only a request; the user types `yes` in chat before anything is marked done.
 
-Shots 1–4 follow one fictional pollen-api canary in Hermes Webapp (mock data only). Shot 1 still shows a collapsed code-tool chip the installed agent opened before `a2ui_render`; no path is visible. Shot 5 is the same kind of surface in `hermes chat`, which has no card renderer.
+The shots below are from one Hermes Webapp chat in dark mode (mock/fictional data only) after the authoring fixes landed on `main`.
 
 ```mermaid
 flowchart LR
@@ -59,25 +59,31 @@ flowchart LR
   G -->|"approved, then done"| S
 ```
 
-1. **Prompt → card.** The user asks for a structured view. The agent presents a surface; Desktop and Webapp draw the card from the `MEDIA:` line.
+1. **Two cards, distinct ids.** A status card and a second, unrelated comparison card both present in the same chat. Express no longer reuses the compiler default id `main`.
 
-   ![User prompt above a fictional pollen-api canary card](docs/screenshots/how-01-prompt-to-card.png)
+   ![A checkout-api status card and a three-espresso comparison card in the same thread, with distinct surface ids](docs/screenshots/how-two-cards.png)
 
-2. **Live data update.** The same `surface_id` is updated with `updateDataModel` only — numbers change, the layout does not.
+2. **Live data-only update, in place.** The first card's rps changes from 1,240 to 1,480 on the same `surface_id` (revision 2). In this session the host refreshed the mounted card and a duplicate did not appear.
 
-   ![The same card after a data-model-only update](docs/screenshots/how-02-live-update.png)
+   ![The checkout-api card now shows 1,480 rps; the espresso card is unchanged; no second copy of the first card](docs/screenshots/how-data-update.png)
 
-3. **Side-effect click → pending.** Clicking Deploy is logged and waits. A click is not approval.
+3. **Compiler recovery.** A prompt that tempts `Text(..., "h1")` and `Icon("trending_up")` is rejected once; the agent retries with allowed variants and a camelCase icon, and the card renders.
 
-   ![The deploy button has been clicked; the card asks for a typed yes](docs/screenshots/how-03-pending-approval.png)
+   ![The first a2ui_render attempt fails; after one retry a Hive traffic card is shown](docs/screenshots/how-h1-recover.png)
 
-4. **Typed yes → done + audit.** After `yes` in chat, the action can be marked done and appears in the hash-chained audit log (`op=audit` or `GET /audit`).
+4. **Plain question, no card.** "Why does TCP need a three-way handshake?" is answered in prose; no new surface is created.
 
-   ![The card shows the action as done, with an audit entry](docs/screenshots/how-04-approved-audit.png)
+   ![A prose explanation of the TCP handshake with no new card below it](docs/screenshots/how-no-card.png)
 
-5. **CLI fallback.** Clients without a card renderer show `fallback_text` instead.
+5. **Side-effect click → pending, then typed yes → done.** The Deploy button is a request, not approval. The confirm step has no Confirm button. After `yes`, `op=audit` shows `outcome: done`.
 
-   ![The same surface as plain text in hermes chat](docs/screenshots/how-05-cli-fallback.png)
+   ![A pollen-api confirm step with no Confirm button, asking for a typed yes](docs/screenshots/how-gate-pending.png)
+
+   ![The same surface after yes: completed, outcome done, action id in the audit log](docs/screenshots/how-gate-done.png)
+
+6. **CLI fallback.** Clients without a card renderer show `fallback_text` instead.
+
+   ![The same kind of surface as plain text in hermes chat](docs/screenshots/how-05-cli-fallback.png)
 
 ## Ops reference
 
@@ -117,9 +123,9 @@ Observed issues, listed honestly:
 
 - **Images not loading** — even public `https` URLs often do not render. Omit the image and say so in `fallback_text`.
 - **View buttons wrapping** in official widgets at typical card widths.
-- **Duplicate surface copies** when an `op=update` leaves a second card in the thread.
 - **Tall cards clipping** under the composer or in the viewport.
-- **Re-present creating a new revision** if the model calls `present` again instead of `update`.
+- **Re-presenting instead of `update`** still creates a new surface if the model calls `present` again for the same view. Presenting a *new* unrelated card without `surface_id` now succeeds with a distinct id (it no longer collides on `main`).
+- **Duplicate surface copies** were **not** observed in a live Webapp session when the model sent a data-only `op=update` and did not paste a second `MEDIA:` line — the first card refreshed in place. A second `MEDIA:` line can still mount a second copy; a renderer-side "highest revision wins" fix is the planned hardening.
 
 ## Development
 

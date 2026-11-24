@@ -88,12 +88,13 @@ divisions). Max 100 components, 256 KiB. Worked example: `references/layout.md`.
 - **Declared actions** (`op=describe topic=actions`) bind a button to one exact
   tool call: `Event("deploy_service", {env: "production", version: $/form/v})`.
   Use only listed names and params. uirizz shows its own confirm panel; relay
-  its title and the reply it asks for (`yes <code>` for high risk). After
+  its title and the reply it asks for (usually `yes <code>`). After
   approval call exactly the tool and args the notice gives, once; the outcome
   is recorded for you, so do not send `action_outcome`.
 - On `Approval gate: ... status=pending_confirmation`: do not act (other tools
   are blocked); `op=update` the card into a confirm step saying exactly what
-  will happen and ask for `yes` or `no` in chat, with no Confirm button. After
+  will happen and ask for the reply the notice names (`yes <code>`) or `no`
+  in chat, with no Confirm button. After
   `status=approved`, act once, then `op=update` with `action_id` and
   `action_outcome=done` or `failed` (`cancelled` if denied). Single-use, 10
   minutes. `op=audit` lists actions. Do not open URLs yourself.

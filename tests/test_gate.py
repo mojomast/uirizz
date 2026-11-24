@@ -212,7 +212,9 @@ def test_full_flow_click_notice_yes_done_single_use():
     approved_turn = _turn("Yes " + _code(rec))["context"]
     assert _status(rec["action_id"]) == "approved"
     assert "status=approved" in approved_turn
-    assert pre_tool_call(session_id=SID, tool_name="terminal") is None  # user said yes
+    assert pre_tool_call(session_id=SID, tool_name="send_message") is None  # user said yes
+    # ...but a free-form yes never unlocks shell/exec/code tools (decision 2, option b).
+    assert pre_tool_call(session_id=SID, tool_name="terminal")["action"] == "block"
 
     gate.complete_action(rec["action_id"], "done")
     assert _status(rec["action_id"]) == "completed"

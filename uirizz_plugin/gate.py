@@ -970,6 +970,36 @@ def _gate_notice(session_id: str | None) -> str | None:
     return _CTRL.sub(" ", " ".join(parts))
 
 
+_FREEFORM_DONE = frozenset({"approved", "completed", "failed", "cancelled"})
+
+
+def _freeform_exec_block(acts: list[dict[str, Any]], name: str) -> str | None:
+    """Option (b): a free-form yes never unlocks shell, exec or code tools.
+
+    A free-form action has no bound call, so its yes can't say which command
+    may run. For APPROVAL_TTL_S after that yes, even once the agent marks it
+    done, exec-like tools are blocked unless a declared action covers the exact
+    call (that case returns earlier in tool_block_message).
+    """
+    from uirizz_plugin.bindings import exec_like
+
+    if not exec_like(name):
+        return None
+    now = _now()
+    for act in acts:
+        bound = isinstance(act.get("binding"), dict) and act["binding"].get("args_hash")
+        decided = float(act.get("decided_t") or 0)
+        if (not bound and act.get("requires_confirmation") and act["status"] in _FREEFORM_DONE
+                and decided and now - decided <= APPROVAL_TTL_S):
+            return (
+                "BLOCKED by the uirizz approval gate: the user's yes on the free-form card action "
+                f"'{_clean(act['event'])}' (code {_short(act['action_id'])}) is not bound to any tool "
+                f"call, so it does not cover shell, exec or code tools like '{_clean(name)}'. Ask the "
+                "user to approve a declared action that names this exact call."
+            )
+    return None
+
+
 def tool_block_message(
     session_id: str | None,
     tool_name: Any,
@@ -1031,6 +1061,9 @@ def tool_block_message(
                 f"{_call_json(b)}, or cancel it with a2ui_render op=update action_id={aid} "
                 "action_outcome=cancelled. Changing the call needs a new click and a new yes."
             )
+        freeform = _freeform_exec_block(acts, name)
+        if freeform:
+            return freeform
         if digest is not None:
             now = _now()
             for act in acts:

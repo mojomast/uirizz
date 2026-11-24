@@ -412,7 +412,10 @@ def test_undeclared_events_need_the_code_then_behave_as_before():
     assert _act(rec["action_id"])["status"] == "pending_confirmation"
     _turn("yes " + rec["action_id"].replace("act-", "")[:6])
     assert _act(rec["action_id"])["status"] == "approved"
-    assert _call("terminal", {"command": "anything"}) is None  # unbound approval, as today
+    # Decision 2 option (b): an unbound yes never unlocks shell/exec/code tools,
+    # other tools behave as before.
+    assert _call("terminal", {"command": "anything"})["action"] == "block"
+    assert _call("send_message", {"to": "kyle"}) is None
 
 
 def test_shipped_example_file_is_valid():

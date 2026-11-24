@@ -131,6 +131,15 @@ def pre_llm_call_context(**kwargs: Any) -> dict[str, str] | None:
         notice = None
     if notice:
         pieces.append(notice)
+    try:
+        from uirizz_plugin.hints import active_cards_hint
+
+        conv = kwargs.get("conversation_id")
+        hint = active_cards_hint(sid, conv if isinstance(conv, str) else None)
+    except Exception:  # noqa: BLE001 - a hint is advisory
+        hint = None
+    if hint:
+        pieces.append(hint)
     if not pieces:
         return None
     return {"context": " ".join(pieces)}

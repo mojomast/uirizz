@@ -1,7 +1,8 @@
 """Approval gate and audit log for A2UI actions.
 
 A card click is a request, never permission. This module records every click
-in an append-only, hash-chained log, decides (fail-closed) whether the click
+in an append-only, hash-chained log (unkeyed: it catches accidental edits, not
+a deliberate rewrite by someone who can write the file), decides (fail-closed) whether the click
 asks for a side effect, and only lets a side effect proceed after the user's
 own typed chat reply says yes. Nothing a card, a model, or a tool result says
 can approve an action.

@@ -135,6 +135,23 @@ Ordered by user impact.
     This is worth a small allowlisted, read-only plugin function set once the
     basics above are solid.
 
+13. **Decide whether free-form clicks may approve side effects** (rizzstack
+    review, Track C #15). After a free-form yes nothing limits what runs
+    next. Options: (a) keep it and document it (done); (b) after a free-form
+    approval, keep shell, exec and code-execution tools blocked unless a
+    declared action covers them; (c) free-form clicks can no longer approve
+    side effects; only declared actions can, and a free-form side-effect
+    click just tells the model to point the user at one. Proposed: (b) now,
+    (c) behind a `freeform_side_effects: deny` setting, made the default at
+    the next minor version.
+14. **Anchor audit chain heads outside the host** (Track C #20, proposal only).
+    Every N entries or on rotation, write `{seq, hash, ts}` of the chain head
+    to the rizzstack Rails event log, which lives off the Hermes host. A later
+    rewrite of `actions.jsonl` then no longer matches an anchored head.
+    Needs a Rails event type and a write path that uirizz can use without
+    holding credentials at runtime, so it probably goes through a Hermes
+    hook or a Rails collector that reads the log, not uirizz itself.
+
 ## 4. Verification
 
 - `pytest`: 139 passed. The 4 token-budget tests could not run in the review

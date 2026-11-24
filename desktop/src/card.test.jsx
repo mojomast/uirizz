@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsx } from 'react/jsx-runtime'
 import { SurfaceCard } from './card.jsx'
 
+vi.mock('./uirizz-catalog.js', () => ({ rendererCatalogs: () => [] }))
+
 vi.mock('@a2ui/react', () => ({
   A2uiSurface: (props) =>
     jsx('div', { 'data-testid': 'a2ui-surface', 'data-id': props.surface && props.surface.id }),

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { A2uiSurface } from '@a2ui/react'
 import { MessageProcessor } from '@a2ui/web_core/v1_0'
-import { catalogWithOpenUrlOff } from './catalog.js'
+import { rendererCatalogs } from './uirizz-catalog.js'
 import { messagesFromPayload, newMessagesSince, parseResult, surfaceIdFrom } from './ids.js'
 import { restJson } from './rest.js'
 import { createRefresher } from './live.js'
@@ -140,7 +140,7 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx, host
   const processor = useMemo(() => {
     if (!surfaceId) return null
     const next = new MessageProcessor(
-      [catalogWithOpenUrlOff()],
+      rendererCatalogs(),
       (action) => {
         if (!ctx || typeof ctx.rest !== 'function') return
         const userMessage = typeof action.userMessage === 'string' ? action.userMessage : ''

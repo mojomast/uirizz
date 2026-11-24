@@ -530,6 +530,8 @@ def _parse_reply(text: Any) -> tuple[str, str | None] | None:
     """Return ('yes'|'no', optional code) for an explicit reply, else None."""
     if not isinstance(text, str) or len(text) > 120:
         return None
+    if text.strip().lower().startswith("[card]"):
+        return None
     norm = re.sub(r"[,\s]+", " ", text.strip().lower()).strip(" .!")
     m = _YES.match(norm)
     if m:

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- A bare `yes` now approves only a lone `risk: low` declared action. Medium,
+  high and free-form side-effect clicks need `yes <code>`; with more than one
+  open action a bare `yes` decides nothing and the notice asks for the code.
+  Cards show `code_required` accordingly. (rizzstack review, Track C #14)
+- `auto_approve` is refused for shell, exec and code-execution tools, both when
+  the definition loads and again at click time. (Track C #19)
+
 ### Fixed
 
 - Express presents without `surface_id` no longer collide on the compiler's

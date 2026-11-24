@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tested Express recipes and a cheat sheet, compiled in CI.
 - `evals/behavior_scenarios.json`: model-in-the-loop scenarios and checks.
 - `docs/IMPROVEMENTS.md`: review findings and next steps.
+- docs/ACTIONS.md "What the gate is, and what it is not": free-form approvals
+  are not enforced in code, the gate is not a boundary against a compromised
+  agent or shell access, `POST /actions` trusts its `session_id`, and the
+  audit chain has no key (catches accidental edits, not rewrites). Same in
+  README and the skill. (rizzstack review, Track C #15, #19, #20)
 
 ### Changed
 

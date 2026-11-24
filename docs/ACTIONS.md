@@ -146,3 +146,29 @@ listed in `op=describe topic=actions`).
   it comes from your definition and the validated params.
 - Never put secrets in `actions.yaml`. Audit and card views redact
   secret-looking keys, but the hash is computed on the real arguments.
+
+### What the gate is, and what it is not
+
+- **Free-form approvals are not enforced in code.** For a declared action,
+  `pre_tool_call` lets through only the approved call, once. For a free-form
+  `Event(...)` click, the gate blocks tools only while the action waits for
+  the user's answer. After the user types yes, nothing in code limits which
+  tools or arguments run next; uirizz relies on the model doing only what the
+  notice describes. Use a declared action for anything that matters.
+- **The gate stops the model from treating a click as approval.** It is not a
+  security boundary against a compromised agent, another plugin, or anyone
+  with shell access on the Hermes host. Those can call tools directly, edit
+  `actions.yaml`, or rewrite the audit log.
+- **`POST /actions` trusts the `session_id` it is sent.** Any client the
+  dashboard lets in can file a click into any session. That click can make
+  the session's gate block tools, but it cannot approve anything, except a
+  `risk: low` declared action marked `auto_approve`, which the click approves
+  by itself. So keep `auto_approve` for actions that are harmless if anyone
+  triggers them. uirizz refuses `auto_approve` for shell, exec and
+  code-execution tools.
+- **The audit chain has no secret key.** Each entry's SHA-256 covers the
+  previous hash, so `op=audit` (`chain_ok`) catches accidental corruption,
+  truncation, or a hand edit that did not recompute the chain. It is not
+  tamper-proof: anyone who can write the file can rewrite it and recompute
+  every hash. Back the log up somewhere the Hermes host cannot write if you
+  need evidence.

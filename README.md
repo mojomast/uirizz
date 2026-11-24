@@ -107,6 +107,8 @@ A card click is a **request, never approval**.
 - `op=update` with `action_outcome=done` or `failed` is rejected until that action is approved.
 - The log is append-only and hash-chained under the plugin data directory (`audit/actions.jsonl`).
 
+What it is not: the gate stops the model from treating a click as approval; it is not a boundary against a compromised agent or anyone with shell access on the host. After a typed yes on a **free-form** click, nothing in code limits which tools run next (declared actions do limit it). `POST /actions` trusts the `session_id` it is sent, and `auto_approve` lets that click alone approve a low-risk declared action. The audit chain has no secret key, so it catches accidental edits, not deliberate rewrites. Details: [docs/ACTIONS.md](docs/ACTIONS.md#what-the-gate-is-and-what-it-is-not).
+
 The plugin declares no credentials and no `requires_env`. It starts no runtime subprocesses. Media must be public `https` (no `http`, `data:`, or local files). Surface records live in the Hermes plugin data directory, not the install checkout. The Desktop half uses only `@hermes/plugin-sdk` and `ctx.rest`. The gate cannot see what a tool does outside Hermes, and card text is still model-authored.
 
 ## Declared actions

@@ -94,7 +94,8 @@ divisions). Max 100 components, 256 KiB. Worked example: `references/layout.md`.
 - On `Approval gate: ... status=pending_confirmation`: do not act (other tools
   are blocked); `op=update` the card into a confirm step saying exactly what
   will happen and ask for `yes` or `no` in chat, with no Confirm button. After
-  `status=approved`, act once, then `op=update` with `action_id` and
+  `status=approved`, do only that one action, once (for a free-form click
+  nothing else stops other tools; you must), then `op=update` with `action_id` and
   `action_outcome=done` or `failed` (`cancelled` if denied). Single-use, 10
   minutes. `op=audit` lists actions. Do not open URLs yourself.
 

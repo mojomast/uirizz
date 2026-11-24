@@ -631,7 +631,7 @@ def _log_action(
             "rejected": rejected,
         }
     )
-    if gated and binding and binding.get("auto_approve"):
+    if gated and binding and binding.get("auto_approve") and not _bindings.exec_like(binding.get("tool")):
         _append({"type": "decision", "action_id": action_id, "decision": "approved",
                  "source": "policy:auto_approve"})
     if gated:
@@ -646,6 +646,17 @@ def _log_action(
                 _append({"type": "decision", "action_id": old["action_id"],
                          "decision": "superseded", "source": "newer_click"})
     return entry
+
+
+def _code_required(act: dict[str, Any]) -> bool:
+    """Whether a typed yes must carry this action's code.
+
+    Only a declared action with ``risk: low`` may be approved by a bare yes,
+    and only when it is the one open question. Medium, high and free-form
+    (undeclared) side effects always need ``yes <code>``.
+    """
+    b = act.get("binding")
+    return not (isinstance(b, dict) and b.get("risk") == "low")
 
 
 def mark_announced(action_id: str) -> None:
@@ -713,16 +724,12 @@ def _observe(session_id: str | None, text: Any) -> list[dict[str, Any]]:
         pending = [a for a in pending if _short(a["action_id"]).startswith(code[:6])]
         if not pending:
             return []
-    elif verdict == "yes" and len(pending) > 1:
+    elif verdict == "yes" and (len(pending) > 1 or _code_required(pending[0])):
+        # A bare "yes" may answer some other question. It approves only a lone
+        # low-risk declared action; everything else needs `yes <code>`.
+        for act in pending:
+            _append({"type": "note", "action_id": act["action_id"], "note": "needs_code"})
         return []
-    elif verdict == "yes":
-        high = [a for a in pending if (a.get("binding") or {}).get("risk") == "high"]
-        if high:
-            # A bare "yes" may answer some other question. High-risk declared
-            # actions need the code, so the yes is unmistakably about them.
-            for act in high:
-                _append({"type": "note", "action_id": act["action_id"], "note": "needs_code"})
-            return []
     decided = []
     excerpt = _clean(text).strip()[:80]
     for act in pending:
@@ -822,7 +829,7 @@ def _binding_view(act: dict[str, Any]) -> dict[str, Any] | None:
         "args": redact(b.get("args")) if "args" in b else None,
         "risk": b.get("risk"),
         "auto_approve": bool(b.get("auto_approve")),
-        "code_required": b.get("risk") == "high",
+        "code_required": _code_required(act),
     }
 
 
@@ -879,11 +886,11 @@ def _gate_notice(session_id: str | None) -> str | None:
         elif status == "pending_confirmation":
             if not act["announced"]:
                 mark_announced(aid)
+            reply = f"yes {_short(aid)}" if _code_required(act) else "yes"
+            extra = ""
+            if "needs_code" in (act.get("notes") or []):
+                extra = " The user replied yes without the code; this action needs the code. "
             if b:
-                reply = f"yes {_short(aid)}" if b.get("risk") == "high" else "yes"
-                extra = ""
-                if "needs_code" in (act.get("notes") or []):
-                    extra = " The user replied yes without the code; high-risk actions need the code. "
                 parts.append(
                     f"{head} status=pending_confirmation. The card shows uirizz's own confirm panel: "
                     f"\"{_clean(b.get('title'))}\" (tool {_clean(b.get('tool'))}).{extra} Tell the user "
@@ -895,7 +902,7 @@ def _gate_notice(session_id: str | None) -> str | None:
                     f"{head} status=pending_confirmation. The user's card click is a request, not "
                     "approval. Do NOT perform the side effect and do not call tools other than "
                     f"a2ui_render. Update the same surface to show a confirm step naming exactly what "
-                    f"will happen, and ask the user to reply yes (or 'yes {_short(aid)}') or no in chat. "
+                    f"will happen, and ask the user to reply `{reply}` or `no` in chat.{extra}"
                     "Only the user's typed chat reply counts."
                 )
         elif status == "approved" and act["outcome"] is None:

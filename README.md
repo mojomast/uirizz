@@ -102,7 +102,7 @@ After a successful `present`, copy the `MEDIA:` line from the tool result, alone
 A card click is a **request, never approval**.
 
 - Classification is **fail-closed**. A click needs confirmation unless the action context says `read_only: true` and nothing points at a side effect. Verbs such as deploy, merge, send, and delete always gate.
-- Approval is the user's own short typed `yes` in chat, after the pending notice, **single-use**, **session-scoped**, and **600 seconds** TTL.
+- Approval is the user's own short typed `yes <code>` in chat, after the pending notice, **single-use**, **session-scoped**, and **600 seconds** TTL. A bare `yes` is accepted only for a lone `risk: low` declared action; medium, high and free-form side effects need the code.
 - While pending, `pre_tool_call` vetoes every tool except `a2ui_render` and a few read-only helpers.
 - `op=update` with `action_outcome=done` or `failed` is rejected until that action is approved.
 - The log is append-only and hash-chained under the plugin data directory (`audit/actions.jsonl`). Every read-decide-write step holds a cross-process lock, and rotation at 5 MB carries open actions and rate-limit state into the new file.
@@ -113,8 +113,8 @@ The plugin declares no credentials and no `requires_env`. It starts no runtime s
 
 Wire a card button to a real tool with a few lines of config. A declared
 action binds a click to **one exact Hermes tool call**: params are validated,
-uirizz draws its own confirm panel, the user's typed yes (`yes <code>` for
-high risk) approves that call only, `pre_tool_call` lets it run once, and
+uirizz draws its own confirm panel, the user's typed yes (`yes <code>` unless
+the action is `risk: low`) approves that call only, `pre_tool_call` lets it run once, and
 `post_tool_call` records the outcome.
 
 ```yaml

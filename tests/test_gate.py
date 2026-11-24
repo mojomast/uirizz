@@ -48,6 +48,10 @@ def _turn(text, session=SID):
     return pre_llm_call(session_id=session, user_message=text)
 
 
+def _code(rec):
+    return rec["action_id"].replace("act-", "")[:6]
+
+
 def _status(action_id):
     for a in gate.session_actions(None):
         if a["action_id"] == action_id:
@@ -207,7 +211,7 @@ def test_full_flow_click_notice_yes_done_single_use():
     assert "not approval" in notice
     assert _status(rec["action_id"]) == "pending_confirmation"
 
-    approved_turn = _turn("Yes")["context"]
+    approved_turn = _turn("Yes " + _code(rec))["context"]
     assert _status(rec["action_id"]) == "approved"
     assert "status=approved" in approved_turn
     assert pre_tool_call(session_id=SID, tool_name="terminal") is None  # user said yes
@@ -301,7 +305,7 @@ def test_pending_and_approval_expire(monkeypatch):
     clock["t"] += 1
     rec2 = _click("deploy", {"side_effect": True})
     _turn("hi")
-    _turn("yes")
+    _turn("yes " + _code(rec2))
     assert _status(rec2["action_id"]) == "approved"
     clock["t"] += gate.APPROVAL_TTL_S + 1
     with pytest.raises(gate.GateError):
@@ -335,7 +339,7 @@ def test_audit_op_lists_actions_and_chain_verifies():
     _surface()
     rec = _click("deploy", {"side_effect": True, "token": "sk-live-abc", "note": "ok\nline"})
     _turn("hi")
-    _turn("yes")
+    _turn("yes " + _code(rec))
     gate.complete_action(rec["action_id"], "done")
     out = parse_tool_result(handle_a2ui_render({"op": "audit", "surface_id": SURF}))
     assert out["ok"] is True and out["chain_ok"] is True

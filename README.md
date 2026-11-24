@@ -105,7 +105,7 @@ A card click is a **request, never approval**.
 - Approval is the user's own short typed `yes <code>` in chat, after the pending notice, **single-use**, **session-scoped**, and **600 seconds** TTL. A bare `yes` is accepted only for a lone `risk: low` declared action; medium, high and free-form side effects need the code.
 - While pending, `pre_tool_call` vetoes every tool except `a2ui_render` and a few read-only helpers.
 - `op=update` with `action_outcome=done` or `failed` is rejected until that action is approved.
-- The log is append-only and hash-chained under the plugin data directory (`audit/actions.jsonl`).
+- The log is append-only and hash-chained under the plugin data directory (`audit/actions.jsonl`). Every read-decide-write step holds a cross-process lock, and rotation at 5 MB carries open actions and rate-limit state into the new file.
 
 The plugin declares no credentials and no `requires_env`. It starts no runtime subprocesses. Media must be public `https` (no `http`, `data:`, or local files). Surface records live in the Hermes plugin data directory, not the install checkout. The Desktop half uses only `@hermes/plugin-sdk` and `ctx.rest`. The gate cannot see what a tool does outside Hermes, and card text is still model-authored.
 

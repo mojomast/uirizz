@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `compile_express` now normalizes `surface_id` before interpolating the
   auto-added `surface(..., update=true)` header, and compiler error details
   redact paths and tracebacks.
+- Audit log rotation (5 MB) no longer resets the gate: the new file carries
+  every open action plus anything inside the per-hour and replay windows, and
+  links to the old chain with a `rotated` entry. Rotation now happens under
+  the lock. (rizzstack review, Track C #16)
+- Read-decide-write in the gate (clicks, typed replies, tool consumption,
+  outcomes) now holds one cross-process lock (`audit/actions.lock`), so one
+  approval can no longer run once per Hermes process and concurrent clicks on
+  one control leave exactly one pending. Per-hour limits are re-checked when
+  the user approves, not only at click time. (Track C #17)
 
 ### Added
 

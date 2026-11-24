@@ -31,13 +31,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from uirizz_plugin.store import _plugin_data_dir
 
@@ -100,6 +102,7 @@ _NO = re.compile(
 )
 
 _lock = threading.RLock()
+_held = threading.local()
 
 
 class GateError(ValueError):
@@ -267,6 +270,39 @@ def _log_path(*, create: bool = True) -> Path:
     return _plugin_data_dir() / "audit" / "actions.jsonl"
 
 
+def _lock_path() -> Path:
+    return _audit_dir() / "actions.lock"
+
+
+@contextmanager
+def _locked() -> Iterator[None]:
+    """Hold the gate lock: this process's threads and every other process.
+
+    The lock lives on a separate ``actions.lock`` file that is never rotated,
+    so a process waiting for it can never end up appending to a log file that
+    was just renamed away. Re-entrant within one thread, so a locked section
+    can call ``_append`` and the readers.
+    """
+    with _lock:
+        if getattr(_held, "depth", 0):
+            _held.depth += 1
+            try:
+                yield
+            finally:
+                _held.depth -= 1
+            return
+        with open(_lock_path(), "a+", encoding="utf-8") as lock_fh:
+            if fcntl is not None:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            _held.depth = 1
+            try:
+                yield
+            finally:
+                _held.depth = 0
+                if fcntl is not None:
+                    fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+
+
 def _now() -> float:
     return time.time()
 
@@ -286,11 +322,29 @@ def _read_lines(path: Path) -> list[str]:
     return [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
 
+def _chain(prev: str, seq: int, entry: dict[str, Any], *, keep_time: bool = False) -> dict[str, Any]:
+    body = dict(entry)
+    for k in ("hash", "prev", "seq"):
+        body.pop(k, None)
+    body["seq"] = seq + 1
+    if not keep_time or "_t" not in body:
+        body["ts"] = _iso(_now())
+        body["_t"] = _now()
+    body["prev"] = prev
+    body["hash"] = _digest(prev, {k: v for k, v in body.items() if k != "hash"})
+    return body
+
+
 def _append(entry: dict[str, Any]) -> dict[str, Any]:
-    """Append one chained entry. Cross-process safe on POSIX."""
+    """Append one chained entry, rotating the log if it got too big.
+
+    Runs under :func:`_locked`, so the append and any rotation are one step
+    for every thread and process.
+    """
     path = _log_path()
-    with _lock:
+    with _locked():
         with open(path, "a+", encoding="utf-8") as fh:
+            # Also lock the log itself, for older uirizz versions that only know this lock.
             if fcntl is not None:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
             try:
@@ -302,12 +356,7 @@ def _append(entry: dict[str, Any]) -> dict[str, Any]:
                     last = json.loads(lines[-1])
                     prev = str(last.get("hash", prev))
                     seq = int(last.get("seq", 0))
-                body = dict(entry)
-                body["seq"] = seq + 1
-                body["ts"] = _iso(_now())
-                body["_t"] = _now()
-                body["prev"] = prev
-                body["hash"] = _digest(prev, {k: v for k, v in body.items() if k != "hash"})
+                body = _chain(prev, seq, entry)
                 fh.seek(0, 2)
                 fh.write(json.dumps(body, ensure_ascii=False, separators=(",", ":")) + "\n")
                 fh.flush()
@@ -316,9 +365,78 @@ def _append(entry: dict[str, Any]) -> dict[str, Any]:
                 if fcntl is not None:
                     fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
         if size > MAX_LOG_BYTES:
-            # Keep one backup; the new file starts a fresh chain.
-            path.replace(path.with_suffix(".jsonl.1"))
+            _rotate(path)
     return body
+
+
+# How far back rotation must carry entries: the per-hour limit window.
+_CARRY_WINDOW_S = 3600
+
+
+def _carry_ids(entries: list[dict[str, Any]], now: float) -> set[str]:
+    """Actions whose state the gate still needs after a rotation.
+
+    Open actions (pending, approved, executing), anything clicked inside the
+    per-hour window (rate limits), and anything decided inside the approval
+    window (replay block). Everything else stays only in the backup.
+    """
+    keep: set[str] = set()
+    for aid, act in _fold(entries, now).items():
+        if act["status"] in ("pending_confirmation", "approved", "executing"):
+            keep.add(aid)
+        elif now - float(act.get("_t") or 0) <= max(_CARRY_WINDOW_S, APPROVAL_TTL_S):
+            keep.add(aid)
+        elif act.get("decided_t") and now - float(act["decided_t"]) <= APPROVAL_TTL_S:
+            keep.add(aid)
+    return keep
+
+
+def _rotate(path: Path) -> None:
+    """Roll the log over, carrying the live state into the new file. Call under ``_locked``.
+
+    The old file becomes ``actions.jsonl.1`` (one backup). The new file starts
+    with a ``rotated`` entry whose ``prev`` is the old file's last hash, then
+    copies of every entry of the actions the gate still needs (original times
+    kept, ``carried: true``), re-chained. The log is swapped in with one
+    atomic rename, so readers never see an empty log.
+    """
+    entries = []
+    for line in _read_lines(path):
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            entries.append(item)
+    if not entries:
+        return
+    now = _now()
+    keep = _carry_ids(entries, now)
+    last = entries[-1]
+    body = _chain(str(last.get("hash", "0" * 64)), 0, {
+        "type": "rotated", "from_seq": last.get("seq"), "carried_actions": len(keep)})
+    out = [body]
+    for e in entries:
+        if e.get("type") in ("action", "announced", "decision", "outcome", "consumed", "released",
+                             "executed", "outcome_announced", "note", "delivered") and e.get("action_id") in keep:
+            carried = {k: v for k, v in e.items() if k not in ("hash", "prev", "seq")}
+            carried["carried"] = True
+            body = _chain(body["hash"], body["seq"], carried, keep_time=True)
+            out.append(body)
+    backup = path.with_suffix(".jsonl.1")
+    tmp_backup = path.with_suffix(".jsonl.1.tmp")
+    tmp_new = path.with_suffix(".jsonl.tmp")
+    with open(tmp_new, "w", encoding="utf-8") as fh:
+        for item in out:
+            fh.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    with open(path, "rb") as src, open(tmp_backup, "wb") as dst:
+        dst.write(src.read())
+        dst.flush()
+        os.fsync(dst.fileno())
+    os.replace(tmp_backup, backup)
+    os.replace(tmp_new, path)
 
 
 def read_entries() -> list[dict[str, Any]]:
@@ -392,6 +510,8 @@ def _fold(entries: list[dict[str, Any]], now: float | None = None) -> dict[str, 
                 act["status"] = e.get("decision")
                 act["decided_t"] = e.get("_t")
                 act["decision_by"] = e.get("source")
+                if e.get("reason"):
+                    act["rejected"] = e.get("reason")
             elif kind == "outcome":
                 act["outcome"] = e.get("outcome")
                 act["status"] = {"done": "completed", "failed": "failed", "cancelled": "cancelled"}.get(
@@ -448,7 +568,13 @@ def _recent_count(action_name: str, now: float | None = None) -> int:
     return count
 
 
-def log_action(
+def log_action(**kwargs: Any) -> dict[str, Any]:
+    """Record a click (see :func:`_log_action`). Read, decide and write are one locked step."""
+    with _locked():
+        return _log_action(**kwargs)
+
+
+def _log_action(
     *,
     surface_id: str,
     session_id: str,
@@ -552,6 +678,30 @@ def _parse_reply(text: Any) -> tuple[str, str | None] | None:
 
 
 def observe_user_message(session_id: str | None, text: Any) -> list[dict[str, Any]]:
+    """Resolve pending actions from a typed reply (see :func:`_observe`), as one locked step."""
+    with _locked():
+        return _observe(session_id, text)
+
+
+def _over_limit(act: dict[str, Any]) -> str | None:
+    """Re-check a declared action's per-hour limit at approval time."""
+    b = act.get("binding")
+    if not isinstance(b, dict) or not b.get("action"):
+        return None
+    try:
+        from uirizz_plugin import bindings as _bindings
+
+        declared = _bindings.get_action(str(b["action"]))
+    except Exception:  # noqa: BLE001 - the click-time check already ran
+        return None
+    if declared is None or not declared.per_hour:
+        return None
+    if _recent_count(declared.name) >= declared.per_hour:
+        return f"rate limit: {declared.per_hour} per hour for {declared.name}"
+    return None
+
+
+def _observe(session_id: str | None, text: Any) -> list[dict[str, Any]]:
     """Resolve pending actions from the user's typed chat reply. Returns decisions made.
 
     Fail-closed: only a short explicit yes/no counts, only after the pending
@@ -584,6 +734,12 @@ def observe_user_message(session_id: str | None, text: Any) -> list[dict[str, An
     excerpt = _clean(text).strip()[:80]
     for act in pending:
         decision = "approved" if verdict == "yes" else "denied"
+        limit = _over_limit(act) if decision == "approved" else None
+        if limit:
+            _append({"type": "decision", "action_id": act["action_id"], "decision": "rejected",
+                     "source": "rate_limit", "reason": limit, "evidence": excerpt})
+            decided.append({"action_id": act["action_id"], "decision": "rejected"})
+            continue
         _append({"type": "decision", "action_id": act["action_id"], "decision": decision,
                  "source": "user_message", "evidence": excerpt})
         decided.append({"action_id": act["action_id"], "decision": decision})
@@ -592,6 +748,11 @@ def observe_user_message(session_id: str | None, text: Any) -> list[dict[str, An
 
 def complete_action(action_id: Any, outcome: Any) -> dict[str, Any]:
     """Record the outcome of an action. 'done' needs a live user approval."""
+    with _locked():
+        return _complete_action(action_id, outcome)
+
+
+def _complete_action(action_id: Any, outcome: Any) -> dict[str, Any]:
     if not isinstance(action_id, str) or not action_id:
         raise GateError("invalid_payload", "action_id is required with action_outcome.",
                         "Pass the action_id from the action notice.")
@@ -698,6 +859,11 @@ def _call_json(b: dict[str, Any]) -> str:
 
 def gate_notice(session_id: str | None) -> str | None:
     """Text for the model about actions that need, or just got, a decision."""
+    with _locked():
+        return _gate_notice(session_id)
+
+
+def _gate_notice(session_id: str | None) -> str | None:
     if not isinstance(session_id, str) or not session_id:
         return None
     parts: list[str] = []
@@ -804,7 +970,7 @@ def tool_block_message(
     sid = session_id if isinstance(session_id, str) and session_id else None
     if has_args is None:
         has_args = args is not None
-    with _lock:
+    with _locked():
         acts = session_actions(sid)
         for act in acts:
             if act["status"] == "pending_confirmation":
@@ -886,7 +1052,7 @@ def record_tool_result(
 
     digest = call_hash(name, args) if has_args else None
     call_id = _clean(tool_call_id)[:120] if tool_call_id else None
-    with _lock:
+    with _locked():
         executing = [a for a in session_actions(sid) if a["status"] == "executing"
                      and isinstance(a.get("binding"), dict) and a["binding"].get("tool") == name]
         match = None

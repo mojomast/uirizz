@@ -143,9 +143,14 @@ listed in `op=describe topic=actions`).
   them (Hermes documents `{"action": "modify"}`). uirizz detects this in
   `post_tool_call` and records the outcome as `unknown` with
   `error_type=args_changed_after_approval`; it cannot undo the call.
-- The single-use check is atomic within one Hermes process. Bound calls are
-  only consumed in the agent process's `pre_tool_call`, so this holds for
-  normal setups.
+- The single-use check is atomic across processes on POSIX hosts: every
+  read-decide-write step holds an exclusive lock on `audit/actions.lock`
+  (`flock`). On a host without `fcntl` (Windows) it falls back to a lock
+  inside one process only.
+- When the log passes 5 MB it rolls over to `actions.jsonl.1`. The new file
+  starts with a `rotated` entry linked to the old chain and carries every
+  open action and everything inside the per-hour and 10-minute replay
+  windows, so rotation does not reset limits or approvals.
 - The card and its labels are still model-authored. The confirm panel is not:
   it comes from your definition and the validated params.
 - Never put secrets in `actions.yaml`. Audit and card views redact

@@ -418,6 +418,9 @@ def _op_update(payload: dict[str, Any]) -> str:
         "component_count": admitted["component_count"] or existing.get("component_count", 0),
         "component_ids": admitted["component_ids"] or existing.get("component_ids", []),
     }
+    from uirizz_plugin.compact import maybe_compact
+
+    record["messages"] = maybe_compact(record["messages"])
     put_surface(record)
     return _success("update", record, _action_warnings(_rebind(admitted["messages"], surface_id, update=True)))
 

@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from uirizz_plugin.catalog import BASIC_CATALOG_ID
+from uirizz_plugin.catalog import UIRIZZ_CATALOG_ID, UIRIZZ_CATALOG_PATH
 from uirizz_plugin.validate import AdmissionError
 
 _SENTINEL = re.compile(r"<a2ui\b", re.IGNORECASE)
@@ -89,9 +89,14 @@ def _messages_from_parts(parts: Any) -> list[dict[str, Any]]:
     return messages
 
 
+_PROCESSOR = None
+
+
 def _processor():
+    global _PROCESSOR
+    if _PROCESSOR is not None:
+        return _PROCESSOR
     try:
-        from a2ui.core.basic_catalog import BasicCatalog, ProtocolVersion
         from a2ui.core.schema.v1_0.renderer_capabilities import (
             A2uiRendererCapabilities,
             V10Capabilities,
@@ -102,15 +107,17 @@ def _processor():
         raise _unavailable(exc) from exc
 
     try:
-        catalog = BasicCatalog(ProtocolVersion.V1_0)
+        cfg = CatalogConfig.from_path(
+            str(UIRIZZ_CATALOG_PATH), catalog_id=UIRIZZ_CATALOG_ID, protocol_version="1.0"
+        )
         generator = A2uiGenerator(
-            catalogs=[CatalogConfig(catalog=catalog)],
-            inference_format_factory=ExpressFormatFactory(),
+            catalogs=[cfg], inference_format_factory=ExpressFormatFactory()
         )
         caps = A2uiRendererCapabilities(
-            v1_0=V10Capabilities(supported_catalog_ids=[BASIC_CATALOG_ID])
+            v1_0=V10Capabilities(supported_catalog_ids=[UIRIZZ_CATALOG_ID])
         )
-        return generator.create_processor(caps)
+        _PROCESSOR = generator.create_processor(caps)
+        return _PROCESSOR
     except AdmissionError:
         raise
     except Exception as exc:

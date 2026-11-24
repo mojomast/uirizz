@@ -42,7 +42,7 @@
     "complexity": 1
   },
   "uirizz_plugin/gate.py": {
-    "complexity": 8
+    "complexity": 9
   },
   "uirizz_plugin/hooks.py": {
     "swallowed-exception": 1

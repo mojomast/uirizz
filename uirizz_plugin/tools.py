@@ -13,6 +13,8 @@ from uirizz_plugin.catalog import (
     BASIC_COMPONENTS,
     LIMITS,
     MVP_COMPONENTS,
+    UIRIZZ_CATALOG_ID,
+    UIRIZZ_COMPONENTS,
 )
 from uirizz_plugin.register_util import call_register_tool
 from uirizz_plugin.store import (
@@ -37,6 +39,8 @@ __all__ = [
     "BASIC_COMPONENTS",
     "LIMITS",
     "MVP_COMPONENTS",
+    "UIRIZZ_CATALOG_ID",
+    "UIRIZZ_COMPONENTS",
     "TOOL_NAME",
     "handle_a2ui_render",
     "parse_tool_result",
@@ -82,8 +86,8 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
             },
             "topic": {
                 "type": "string",
-                "enum": ["recipes", "express", "actions"],
-                "description": "With op=describe: recipes, Express cheat sheet, or declared actions.",
+                "enum": ["recipes", "express", "actions", "components"],
+                "description": "With op=describe: recipes, Express cheat sheet, actions, or components.",
             },
             "action_id": {
                 "type": "string",
@@ -127,7 +131,7 @@ def _error(code: str, error: str, fix: str, **extra: Any) -> str:
 
 
 _REFERENCES = Path(__file__).resolve().parent.parent / "skills" / "uirizz" / "references"
-DESCRIBE_TOPICS = {"recipes": "recipes.md", "express": "express.md", "actions": None}
+DESCRIBE_TOPICS = {"recipes": "recipes.md", "express": "express.md", "actions": None, "components": "components.md"}
 
 _ACTIONS_HOWTO = (
     "Declared actions bind a button to one exact tool call. Wire one with "
@@ -150,7 +154,7 @@ def describe_topic(topic: str) -> dict[str, Any]:
         raise AdmissionError(
             "invalid_payload",
             f"Unknown describe topic {topic!s}.",
-            "Use topic=recipes, topic=express or topic=actions, or omit topic.",
+            "Use topic=recipes, express, actions or components, or omit topic.",
         )
     path = _REFERENCES / name
     if not path.is_file():
@@ -172,6 +176,13 @@ def describe_payload() -> dict[str, Any]:
         "catalog_id": BASIC_CATALOG_ID,
         "components": list(MVP_COMPONENTS),
         "basic_catalog_components": list(BASIC_COMPONENTS),
+        "uirizz_catalog_id": UIRIZZ_CATALOG_ID,
+        "uirizz_components": list(UIRIZZ_COMPONENTS),
+        "uirizz_note": (
+            "Chart, DataTable, Metric, Progress, Badge, Callout, KeyValueList, Timeline and "
+            "CodeBlock are available in Express and in jsonl with catalogId set to uirizz_catalog_id. "
+            "op=describe topic=components has props and examples."
+        ),
         "deferred_components": ["Video", "AudioPlayer"],
         "functions_disabled": ["openUrl"],
         "limits": {
@@ -220,6 +231,7 @@ def describe_payload() -> dict[str, Any]:
             "recipes": "op=describe topic=recipes: tested Express for status, compare, form, pick, list, confirm, progress, tabs",
             "express": "op=describe topic=express: grammar, signatures, icon names, gotchas",
             "actions": "op=describe topic=actions: buttons bound to exact tool calls (deploy, send, ...)",
+            "components": "op=describe topic=components: Chart, DataTable, Metric, Progress, Badge, Callout, KeyValueList, Timeline, CodeBlock",
         },
     }
 
@@ -402,7 +414,15 @@ def _op_update(payload: dict[str, Any]) -> str:
         )
     fallback = _require_fallback(payload, required=False) or existing["fallback_text"]
     jsonl = _jsonl_from_args(payload, prior=existing)
-    admitted = admit_jsonl(jsonl, require_root=False)
+    admitted = admit_jsonl(
+        jsonl,
+        require_root=False,
+        uirizz_surface=any(
+            isinstance(m.get("createSurface"), dict)
+            and m["createSurface"].get("catalogId") == UIRIZZ_CATALOG_ID
+            for m in (existing.get("messages") or [])
+        ),
+    )
     # Fail-closed: reporting a side effect as done needs a live user approval.
     # Checked before anything is stored, so a rejected report changes nothing.
     action_id = payload.get("action_id")

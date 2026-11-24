@@ -5,7 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Iterable
 
-from uirizz_plugin.catalog import BASIC_CATALOG_ID, LIMITS, MVP_COMPONENTS
+from uirizz_plugin.catalog import (
+    BASIC_CATALOG_ID,
+    LIMITS,
+    MVP_COMPONENTS,
+    UIRIZZ_CATALOG_ID,
+    UIRIZZ_COMPONENTS,
+)
 from uirizz_plugin.urls import UrlPolicyError, validate_https_public_url
 
 ALLOWED_OPS_MESSAGES = ("createSurface", "updateComponents", "updateDataModel", "deleteSurface")
@@ -124,6 +130,53 @@ def _component_type(comp: dict[str, Any]) -> str:
     return typ
 
 
+def _surface_catalogs(messages: Iterable[dict[str, Any]]) -> dict[str, str]:
+    """surfaceId -> catalogId for every createSurface in the batch."""
+    out: dict[str, str] = {}
+    for envelope in messages:
+        body = envelope.get("createSurface")
+        if isinstance(body, dict):
+            sid = body.get("surfaceId") or body.get("surface_id")
+            out[sid if isinstance(sid, str) else ""] = body.get("catalogId") or BASIC_CATALOG_ID
+    return out
+
+
+def _check_data_caps(messages: Iterable[dict[str, Any]], comps_by_msg: list[dict[str, Any]]) -> None:
+    max_rows = LIMITS["max_literal_rows"]
+    max_items = LIMITS["max_array_items"]
+
+    def walk(value: Any) -> None:
+        if isinstance(value, list):
+            if len(value) > max_items:
+                raise AdmissionError(
+                    "oversize",
+                    f"A data-model array has {len(value)} items; the cap is {max_items}.",
+                    f"Send at most {max_items} items per array; aggregate or paginate the rest.",
+                )
+            for item in value:
+                walk(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+
+    for envelope in messages:
+        body = envelope.get("updateDataModel")
+        if isinstance(body, dict):
+            walk(body.get("value"))
+        body = envelope.get("createSurface")
+        if isinstance(body, dict):
+            walk(body.get("dataModel"))
+    for comp in comps_by_msg:
+        if comp.get("component") in ("Chart", "DataTable"):
+            data = comp.get("data")
+            if isinstance(data, list) and len(data) > max_rows:
+                raise AdmissionError(
+                    "oversize",
+                    f"{comp['component']} data has {len(data)} literal rows; the cap is {max_rows}.",
+                    f"Bind data to a $/path in the data model, or send at most {max_rows} rows.",
+                )
+
+
 def collect_components(messages: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     for envelope in messages:
@@ -131,11 +184,11 @@ def collect_components(messages: Iterable[dict[str, Any]]) -> list[dict[str, Any
         body = envelope[key]
         if key == "createSurface":
             catalog = body.get("catalogId")
-            if catalog is not None and catalog != BASIC_CATALOG_ID:
+            if catalog is not None and catalog not in (BASIC_CATALOG_ID, UIRIZZ_CATALOG_ID):
                 raise AdmissionError(
                     "unknown_component",
-                    "Only the official Basic Catalog v1.0 is admitted.",
-                    f"Set catalogId to {BASIC_CATALOG_ID}.",
+                    "Only the official Basic Catalog v1.0 or the uirizz/1 catalog is admitted.",
+                    f"Set catalogId to {UIRIZZ_CATALOG_ID} (or {BASIC_CATALOG_ID} for Basic only).",
                 )
             comps = body.get("components") or []
         elif key == "updateComponents":
@@ -164,6 +217,7 @@ def admit_jsonl(
     *,
     resolver: Callable[[str], list[str]] | None = None,
     require_root: bool = True,
+    uirizz_surface: bool = False,
 ) -> dict[str, Any]:
     messages = parse_jsonl(text)
     components = collect_components(messages)
@@ -173,6 +227,11 @@ def admit_jsonl(
             f"Surface has {len(components)} components; the cap is {LIMITS['max_components']}.",
             f"Keep the surface to at most {LIMITS['max_components']} components.",
         )
+    uirizz_ok = UIRIZZ_CATALOG_ID in _surface_catalogs(messages).values()
+    if not uirizz_ok:
+        # Updates to an existing surface carry no createSurface; honour the stored catalog.
+        uirizz_ok = uirizz_surface
+    _check_data_caps(messages, components)
     ids: set[str] = set()
     for comp in components:
         typ = _component_type(comp)
@@ -182,7 +241,7 @@ def admit_jsonl(
                 f"Component {typ} is not enabled in this version.",
                 "Use Image, Text, layout, and form components from the Basic Catalog. Video and AudioPlayer are deferred.",
             )
-        if typ not in MVP_COMPONENTS:
+        if typ not in MVP_COMPONENTS and not (uirizz_ok and typ in UIRIZZ_COMPONENTS):
             raise AdmissionError(
                 "unknown_component",
                 f"Component {typ} is not in the official Basic Catalog allowlist.",
@@ -203,7 +262,7 @@ def admit_jsonl(
             )
         ids.add(cid)
         extra_catalog = comp.get("@catalogId")
-        if extra_catalog is not None and extra_catalog != BASIC_CATALOG_ID:
+        if extra_catalog is not None and extra_catalog not in (BASIC_CATALOG_ID, UIRIZZ_CATALOG_ID):
             raise AdmissionError(
                 "unknown_component",
                 "Per-component catalogs other than the official Basic Catalog are rejected.",

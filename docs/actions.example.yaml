@@ -31,7 +31,7 @@ actions:
     risk: high
     limits: {per_hour: 3}
 
-  # Medium risk (the default): a typed "yes" approves.
+  # Medium risk (the default): the user must type "yes <code>" in chat.
   post_status:
     title: "Post to #{channel}: {text}"
     tool: mcp_slack_post_message

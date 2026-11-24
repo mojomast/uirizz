@@ -50,6 +50,15 @@ _SECRET_KEY = re.compile(
 )
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 
+# Tool-name words that mean "runs commands or code". A click alone can never
+# approve such a tool, so ``auto_approve`` is refused for it (fail-closed: a
+# false match only means the user has to type yes).
+_EXEC_WORDS = frozenset(
+    """terminal shell bash sh zsh fish powershell pwsh cmd exec execute execution eval
+    process subprocess spawn run code python py node deno script repl ssh computer""".split()
+)
+_TOOL_WORDS = re.compile(r"[^a-z0-9]+")
+
 MAX_STRING = 1000
 MAX_ARRAY = 50
 MAX_PATTERN = 200
@@ -219,6 +228,14 @@ def _placeholders(node: Any, found: set[str]) -> None:
             _placeholders(v, found)
 
 
+def exec_like(tool: Any) -> bool:
+    """True when a tool name looks like it runs shell commands or code."""
+    if not isinstance(tool, str):
+        return True
+    words = {w for w in _TOOL_WORDS.split(tool.lower()) if w}
+    return bool(words & _EXEC_WORDS)
+
+
 def parse_definition(name: Any, raw: Any, *, source: str = "file") -> ActionDef:
     """Validate one definition. Raises ActionConfigError with a precise reason."""
     if not isinstance(name, str) or not _NAME.match(name):
@@ -245,6 +262,11 @@ def parse_definition(name: Any, raw: Any, *, source: str = "file") -> ActionDef:
         raise ActionConfigError(f"{name}.auto_approve: true or false")
     if auto and risk != "low":
         raise ActionConfigError(f"{name}.auto_approve: only allowed with risk: low")
+    if auto and exec_like(tool):
+        raise ActionConfigError(
+            f"{name}.auto_approve: not allowed for shell, exec or code-execution tools ({tool}); "
+            "remove auto_approve so the user types yes"
+        )
     params_raw = raw.get("params", {}) or {}
     if not isinstance(params_raw, dict):
         raise ActionConfigError(f"{name}.params: a mapping of param name to spec")

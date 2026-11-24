@@ -75,9 +75,13 @@ retried request cannot run twice there.
 
 | Risk | Approval |
 |---|---|
-| `low` + `auto_approve` | The click approves. Still bound to the exact call, still single-use, still logged with `decision_by=policy:auto_approve`. |
-| `low` / `medium` | The user types `yes` (or `yes <code>`) in chat. |
-| `high` | The user must type `yes <code>`. A bare `yes` is ignored, so a "yes" meant for another question cannot approve a deploy. |
+| `low` + `auto_approve` | The click approves. Still bound to the exact call, still single-use, still logged with `decision_by=policy:auto_approve`. Refused for shell, exec and code-execution tools (`terminal`, `execute_code`, `process_manage`, or any tool name containing a word such as shell, bash, exec, run, code, python, ssh): those always need a typed yes. |
+| `low` | The user types `yes` (or `yes <code>`) in chat. A bare `yes` counts only when this is the one open question. |
+| `medium` / `high` | The user must type `yes <code>`. A bare `yes` is ignored, so a "yes" meant for another question cannot approve it. |
+
+Free-form (undeclared) side-effect clicks follow the `medium` rule: `yes <code>`.
+When more than one action is open, a bare `yes` decides nothing; the notice
+asks for the code. A bare `no` still cancels every open action (fail-closed).
 
 ## What happens on a click
 

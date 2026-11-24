@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from uirizz_plugin.catalog import BASIC_CATALOG_ID
+from uirizz_plugin.catalog import UIRIZZ_CATALOG_ID
 from uirizz_plugin.store import set_store_dir
 from uirizz_plugin.tools import handle_a2ui_render, parse_tool_result
 
@@ -50,7 +50,7 @@ def test_compile_express_to_jsonl():
     kinds = {k for env in envelopes for k in env if k != "version"}
     assert "createSurface" in kinds
     text = jsonl
-    assert BASIC_CATALOG_ID in text
+    assert UIRIZZ_CATALOG_ID in text
     assert "Hello from Express" in text
     assert "create_surface" not in text  # wire JSON uses camelCase
 

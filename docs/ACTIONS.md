@@ -75,9 +75,13 @@ retried request cannot run twice there.
 
 | Risk | Approval |
 |---|---|
-| `low` + `auto_approve` | The click approves. Still bound to the exact call, still single-use, still logged with `decision_by=policy:auto_approve`. |
-| `low` / `medium` | The user types `yes` (or `yes <code>`) in chat. |
-| `high` | The user must type `yes <code>`. A bare `yes` is ignored, so a "yes" meant for another question cannot approve a deploy. |
+| `low` + `auto_approve` | The click approves. Still bound to the exact call, still single-use, still logged with `decision_by=policy:auto_approve`. Refused for shell, exec and code-execution tools (`terminal`, `execute_code`, `process_manage`, or any tool name containing a word such as shell, bash, exec, run, code, python, ssh): those always need a typed yes. |
+| `low` | The user types `yes` (or `yes <code>`) in chat. A bare `yes` counts only when this is the one open question. |
+| `medium` / `high` | The user must type `yes <code>`. A bare `yes` is ignored, so a "yes" meant for another question cannot approve it. |
+
+Free-form (undeclared) side-effect clicks follow the `medium` rule: `yes <code>`.
+When more than one action is open, a bare `yes` decides nothing; the notice
+asks for the code. A bare `no` still cancels every open action (fail-closed).
 
 ## What happens on a click
 
@@ -139,10 +143,41 @@ listed in `op=describe topic=actions`).
   them (Hermes documents `{"action": "modify"}`). uirizz detects this in
   `post_tool_call` and records the outcome as `unknown` with
   `error_type=args_changed_after_approval`; it cannot undo the call.
-- The single-use check is atomic within one Hermes process. Bound calls are
-  only consumed in the agent process's `pre_tool_call`, so this holds for
-  normal setups.
+- The single-use check is atomic across processes on POSIX hosts: every
+  read-decide-write step holds an exclusive lock on `audit/actions.lock`
+  (`flock`). On a host without `fcntl` (Windows) it falls back to a lock
+  inside one process only.
+- When the log passes 5 MB it rolls over to `actions.jsonl.1`. The new file
+  starts with a `rotated` entry linked to the old chain and carries every
+  open action and everything inside the per-hour and 10-minute replay
+  windows, so rotation does not reset limits or approvals.
 - The card and its labels are still model-authored. The confirm panel is not:
   it comes from your definition and the validated params.
 - Never put secrets in `actions.yaml`. Audit and card views redact
   secret-looking keys, but the hash is computed on the real arguments.
+
+### What the gate is, and what it is not
+
+- **Free-form approvals are not enforced in code.** For a declared action,
+  `pre_tool_call` lets through only the approved call, once. For a free-form
+  `Event(...)` click, the gate blocks tools only while the action waits for
+  the user's answer. After the user types yes, nothing in code limits which
+  tools or arguments run next; uirizz relies on the model doing only what the
+  notice describes. Use a declared action for anything that matters.
+- **The gate stops the model from treating a click as approval.** It is not a
+  security boundary against a compromised agent, another plugin, or anyone
+  with shell access on the Hermes host. Those can call tools directly, edit
+  `actions.yaml`, or rewrite the audit log.
+- **`POST /actions` trusts the `session_id` it is sent.** Any client the
+  dashboard lets in can file a click into any session. That click can make
+  the session's gate block tools, but it cannot approve anything, except a
+  `risk: low` declared action marked `auto_approve`, which the click approves
+  by itself. So keep `auto_approve` for actions that are harmless if anyone
+  triggers them. uirizz refuses `auto_approve` for shell, exec and
+  code-execution tools.
+- **The audit chain has no secret key.** Each entry's SHA-256 covers the
+  previous hash, so `op=audit` (`chain_ok`) catches accidental corruption,
+  truncation, or a hand edit that did not recompute the chain. It is not
+  tamper-proof: anyone who can write the file can rewrite it and recompute
+  every hash. Back the log up somewhere the Hermes host cannot write if you
+  need evidence.

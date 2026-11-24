@@ -158,12 +158,15 @@ listed in `op=describe topic=actions`).
 
 ### What the gate is, and what it is not
 
-- **Free-form approvals are not enforced in code.** For a declared action,
-  `pre_tool_call` lets through only the approved call, once. For a free-form
-  `Event(...)` click, the gate blocks tools only while the action waits for
-  the user's answer. After the user types yes, nothing in code limits which
-  tools or arguments run next; uirizz relies on the model doing only what the
-  notice describes. Use a declared action for anything that matters.
+- **Free-form approvals are only partly enforced in code.** For a declared
+  action, `pre_tool_call` lets through only the approved call, once. For a
+  free-form `Event(...)` click, the gate blocks tools while the action waits
+  for the user's answer. After the user types yes, shell, exec and
+  code-execution tools (`terminal`, `execute_code`, `*_run_shell` and the like)
+  stay blocked for the 600-second approval window, even after the action is
+  marked done, unless a declared action the user approved covers that exact
+  call. Other tools are not limited; uirizz relies on the model doing only
+  what the notice describes. Use a declared action for anything that matters.
 - **The gate stops the model from treating a click as approval.** It is not a
   security boundary against a compromised agent, another plugin, or anyone
   with shell access on the Hermes host. Those can call tools directly, edit

@@ -141,9 +141,10 @@ Ordered by user impact.
     approval, keep shell, exec and code-execution tools blocked unless a
     declared action covers them; (c) free-form clicks can no longer approve
     side effects; only declared actions can, and a free-form side-effect
-    click just tells the model to point the user at one. Proposed: (b) now,
-    (c) behind a `freeform_side_effects: deny` setting, made the default at
-    the next minor version.
+    click just tells the model to point the user at one. Decided Nov 24:
+    (b) is done (see docs/ACTIONS.md); (c) behind a
+    `freeform_side_effects: deny` setting, made the default at the next minor
+    version, is still open.
 14. **Anchor audit chain heads outside the host** (Track C #20, proposal only).
     Every N entries or on rotation, write `{seq, hash, ts}` of the chain head
     to the rizzstack Rails event log, which lives off the Hermes host. A later

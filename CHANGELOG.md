@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cards show `code_required` accordingly. (rizzstack review, Track C #14)
 - `auto_approve` is refused for shell, exec and code-execution tools, both when
   the definition loads and again at click time. (Track C #19)
+- A typed yes on a free-form card action no longer unlocks shell, exec or
+  code-execution tools. For the 600-second approval window, even after the
+  action is marked done, those tools stay blocked unless a declared action the
+  user approved covers the exact call. Other tools behave as before.
+  (rizzstack decision 2, option b)
 
 ### Fixed
 

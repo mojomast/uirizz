@@ -4,7 +4,7 @@ description: >-
   Show a live A2UI card in Hermes Desktop and Webapp chat with a2ui_render:
   status boards, comparisons, forms, pickers, result lists, progress monitors
   and confirm steps. Use when the user will scan, compare, fill in or watch
-  structured data. Not for ordinary Q&A, or to build UI with shell, gh or git.
+  structured data. Not for ordinary Q&A.
 ---
 
 # uirizz
@@ -36,7 +36,7 @@ you will report on again, or a confirm step. At most one new card per reply.
 ## Hard rules
 
 1. Send `fallback_text` on `present`: plain text with the same numbers, read
-   by CLI and Telegram users (uirizz writes one if you omit it; yours is better).
+   by CLI and Telegram users (generated if omitted).
 2. Without the `MEDIA:` line in your reply, Desktop shows no card.
 3. Same view, same card: `op=update` with the `surface_id`; never re-present.
    The card refreshes itself; do not paste a second `MEDIA:` line.
@@ -72,7 +72,7 @@ b = Card(Column([Text("Error rate", "caption"), Text($/kpi/errors)]), weight=1)
 Numbers and records go in uirizz components, not rows of Text: `Chart`,
 `DataTable`, `Metric`, `Progress`, `Badge`, `Callout`, `KeyValueList`,
 `Timeline`, `CodeBlock`. Signatures and tested examples:
-`op=describe topic=components`. Bind data as `$/path`. A Chart or DataTable
+`op=describe topic=components`. A Chart or DataTable
 writes the clicked row to `selection=$/ui/x`; send it with
 `Event("drill", {row: $/ui/x, read_only: true})`.
 
@@ -83,7 +83,6 @@ no grid). KPI row: 3-5 `Card`s at `weight=1`. Master/detail: `weight=2` left,
 `weight=3` right (2:3). `Tabs` for peer views of one object, `Modal` for a short
 detail, `List` with `_template($/rows, row)` for repeats. No Map or Markdown
 block (a Slider's `steps` counts divisions). Max 100 components, 256 KiB.
-Worked example: `references/layout.md`.
 
 ## Clicks, forms, approval
 

@@ -105,8 +105,16 @@ def test_second_present_with_new_id_does_not_mutate_first():
     assert get_surface("b") is not None
 
 
-def test_present_requires_fallback_text():
+def test_present_generates_fallback_text_when_missing():
     body = _load(handle_a2ui_render({"op": "present", "jsonl": _surface()}))
+    assert body["ok"] is True
+    assert body["fallback_text"] == "Hello"
+    assert body["fallback_generated"] is True
+
+
+def test_present_requires_fallback_text_when_nothing_to_generate():
+    divider = _surface(extra_components=[{"id": "root", "component": "Divider"}])
+    body = _load(handle_a2ui_render({"op": "present", "jsonl": divider, "fallback_text": "  "}))
     assert body["ok"] is False
     assert body["code"] == "missing_fallback_text"
     assert "fix" in body

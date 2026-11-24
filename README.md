@@ -139,6 +139,22 @@ limits, replay and argument-tampering protection, and a plugin API are covered
 in [docs/ACTIONS.md](docs/ACTIONS.md). Validate a file with
 `python -m uirizz_plugin.bindings check`.
 
+## Data components (uirizz/1)
+
+uirizz extends the Basic Catalog with nine data components, so the agent answers "show me the trend" with a chart instead of prose:
+
+| Component | For |
+|---|---|
+| `Chart` | line, area, bar, stacked bar, horizontal bar, scatter, pie, donut (ECharts, SVG renderer, plain-text tooltips, a "View as table" toggle) |
+| `DataTable` | sortable, paged rows with per-column formats |
+| `Metric` | a headline number with delta, trend and optional sparkline |
+| `Progress`, `Badge`, `Callout` | completion, a status word, a highlighted note |
+| `KeyValueList`, `Timeline`, `CodeBlock` | label/value pairs, dated events, code or logs |
+
+Charts and tables are inputs too: `selection=$/ui/row` writes the clicked row into the data model, and the button's action sends it, for example `Event("drill", {row: $/ui/row, read_only: true})`. The contract is [uirizz_components.json](uirizz_plugin/catalogs/uirizz_components.json); `python scripts/build_catalog.py` rebuilds the merged catalog, and CI fails if it is stale. The agent gets signatures and tested examples from `op=describe topic=components`.
+
+Cards now update over a push socket (with adaptive polling as a fallback), collapse older copies of the same surface ("highest revision wins"), and can open in a Desktop workspace tab ("Open in canvas"). `fallback_text` is generated from the components when the agent omits it.
+
 ## Layout tips
 
 Compose wide: wrap the surface in a `Column` and give `Row`/`Column` children a `weight`. KPI row: 3–5 `Card`s at `weight=1`. Master/detail: `2:3`. Prefer `updateDataModel` after the first `present`. The bundled skill (`uirizz:uirizz`) links [tested recipes](skills/uirizz/references/recipes.md), an [Express cheat sheet](skills/uirizz/references/express.md), and a [worked layout](skills/uirizz/references/layout.md); CI compiles every example.
@@ -147,15 +163,15 @@ Compose wide: wrap the surface in a `Column` and give `Row`/`Column` children a 
 
 ## Limits and known issues
 
-Official Basic Catalog v1.0 only: Text, Image, Icon, Row, Column, List, Card, Tabs, Divider, Modal, Button, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput. No Video, AudioPlayer, or `openUrl`. Caps: **256 KiB** payload, **100** components. No Chart, Table, Progress, Badge, Map, or Markdown block.
+Basic Catalog v1.0 (Text, Image, Icon, Row, Column, List, Card, Tabs, Divider, Modal, Button, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput) plus the nine uirizz/1 components above. No Video, AudioPlayer, or `openUrl`. Caps: **256 KiB** payload, **100** components, 500 rows in a literal Chart/DataTable array, 5,000 items in any data-model array. No Map or Markdown block.
 
 Observed issues, listed honestly:
 
 - **Images not loading** — even public `https` URLs often do not render. Omit the image and say so in `fallback_text`.
 - **View buttons wrapping** in official widgets at typical card widths.
-- **Tall cards clipping** under the composer or in the viewport.
+- **Tall cards** now scroll inside a 480 px card; use **Open in canvas** for dashboards.
 - **Re-presenting instead of `update`** still creates a new surface if the model calls `present` again for the same view. Presenting a *new* unrelated card without `surface_id` now succeeds with a distinct id (it no longer collides on `main`).
-- **Duplicate surface copies** were **not** observed in a live Webapp session when the model sent a data-only `op=update` and did not paste a second `MEDIA:` line — the first card refreshed in place. A second `MEDIA:` line can still mount a second copy; a renderer-side "highest revision wins" fix is the planned hardening.
+- **Duplicate surface copies:** a second `MEDIA:` line for the same surface now collapses the older card to a one-line "Updated below" stub (highest revision wins). Not yet verified live.
 
 ## Development
 

@@ -2,11 +2,47 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { A2uiSurface } from '@a2ui/react'
 import { MessageProcessor } from '@a2ui/web_core/v1_0'
-import { catalogWithOpenUrlOff } from './catalog.js'
+import { rendererCatalogs } from './uirizz-catalog.js'
 import { messagesFromPayload, newMessagesSince, parseResult, surfaceIdFrom } from './ids.js'
 import { restJson } from './rest.js'
+import { createRefresher } from './live.js'
 
-const POLL_MS = 4000
+// Highest revision wins: surfaceId -> entries for every mounted (non-canvas) card.
+const registry = new Map()
+const registryListeners = new Set()
+
+function registryMax(surfaceId) {
+  const entries = registry.get(surfaceId)
+  if (!entries) return 0
+  let max = 0
+  for (const e of entries) if (e.revision > max) max = e.revision
+  return max
+}
+
+function registryAdd(surfaceId, entry) {
+  if (!registry.has(surfaceId)) registry.set(surfaceId, new Set())
+  registry.get(surfaceId).add(entry)
+  registryListeners.forEach((fn) => fn())
+}
+
+function registryRemove(surfaceId, entry) {
+  const entries = registry.get(surfaceId)
+  if (!entries) return
+  entries.delete(entry)
+  if (!entries.size) registry.delete(surfaceId)
+  registryListeners.forEach((fn) => fn())
+}
+
+function revisionOf(parsed) {
+  const n = parsed && Number(parsed.revision)
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+
+function firstLine(text, max) {
+  if (typeof text !== 'string') return ''
+  const line = text.split('\n').find((l) => l.trim()) || ''
+  return line.trim().slice(0, max)
+}
 
 // A click is a request, never approval. The host (not the model) tells the
 // user what is still waiting, using the plugin's audit log.
@@ -69,9 +105,15 @@ function lookUpSurfaceId(args, result) {
   return surfaceIdFrom(args, result)
 }
 
-export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
+export function SurfaceCard({ file, args, result, sessionId, fallback, ctx, host, variant }) {
   const surfaceId = lookUpSurfaceId(args, result)
   const parsedResult = parseResult(result)
+  const canvas = variant === 'canvas'
+  const myRevision = revisionOf(parsedResult)
+  const hostRef = useRef(host)
+  hostRef.current = host
+  const pokeRef = useRef(null)
+  const [, bump] = useState(0)
   const [payload, setPayload] = useState(null)
   const [surface, setSurface] = useState(null)
   const [loadError, setLoadError] = useState(null)
@@ -80,12 +122,28 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
   const [gate, setGate] = useState(null)
   const gateIdRef = useRef(null)
 
+  useEffect(() => {
+    if (!surfaceId || canvas) return undefined
+    const entry = { revision: myRevision }
+    const listener = () => bump((n) => n + 1)
+    registryListeners.add(listener)
+    registryAdd(surfaceId, entry)
+    return () => {
+      registryListeners.delete(listener)
+      registryRemove(surfaceId, entry)
+    }
+  }, [surfaceId, canvas, myRevision])
+
+  const supersededBy = surfaceId && !canvas ? registryMax(surfaceId) : 0
+  const superseded = supersededBy > myRevision
+
   const processor = useMemo(() => {
     if (!surfaceId) return null
     const next = new MessageProcessor(
-      [catalogWithOpenUrlOff()],
+      rendererCatalogs(),
       (action) => {
         if (!ctx || typeof ctx.rest !== 'function') return
+        const userMessage = typeof action.userMessage === 'string' ? action.userMessage : ''
         void restJson(ctx, '/actions', {
           method: 'POST',
           body: {
@@ -109,7 +167,26 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
             const status =
               typeof res.status === 'string' && GATE_COPY[res.status] ? res.status : 'pending_confirmation'
             setGate(gateFromEntry({ ...res, status }, null))
+          } else if (
+            res &&
+            res.ok !== false &&
+            res.status === 'recorded' &&
+            !res.requires_confirmation &&
+            !res.binding &&
+            userMessage.trim()
+          ) {
+            // A plain click that carries a userMessage starts a chat turn. Gated and
+            // declared actions never do; they wait for the user's reply in chat.
+            const h = hostRef.current
+            if (h && h.composer && typeof h.composer.submit === 'function') {
+              try {
+                h.composer.submit(sessionId, '[card] ' + userMessage.slice(0, 500))
+              } catch {
+                // fail closed
+              }
+            }
           }
+          if (pokeRef.current) pokeRef.current()
         })
       },
       { version: '1.0', reportErrorsOnly: true },
@@ -152,37 +229,42 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
   }, [processor, surfaceId])
 
   useEffect(() => {
-    if (!surfaceId || !ctx || typeof ctx.rest !== 'function') return undefined
+    if (!surfaceId || !ctx || typeof ctx.rest !== 'function' || superseded) return undefined
     let cancelled = false
+    let appliedRevision = 0
 
     const apply = (body) => {
-      if (cancelled || !body) return
+      if (cancelled || !body) return false
       setPayload(body)
       if (body.ok === false || body.code === 'not_found') {
         setLoadError(body.code || 'not_found')
-        return
+        return false
       }
       setLoadError(null)
+      const rev = Number(body.revision)
+      if (Number.isFinite(rev) && rev > appliedRevision) appliedRevision = rev
       const msgs = messagesFromPayload(body)
       const incoming = newMessagesSince(msgs, processed.current)
-      if (!incoming.length || !processorRef.current) return
+      if (!incoming.length || !processorRef.current) return false
       try {
         processorRef.current.processMessages(incoming)
         processed.current += incoming.length
       } catch {
         setLoadError('render_error')
       }
+      return true
     }
 
     const refresh = async () => {
+      let changed = false
       try {
         const body = await restJson(ctx, `/surfaces/${encodeURIComponent(surfaceId)}`)
-        apply(body)
+        changed = apply(body)
       } catch {
         if (!cancelled) setLoadError('rest_error')
       }
       const gateId = gateIdRef.current
-      if (!gateId) return
+      if (!gateId) return changed
       try {
         const audit = await restJson(
           ctx,
@@ -193,60 +275,86 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
             ? audit.actions.find((a) => a && a.action_id === gateId)
             : null
         if (!cancelled && entry && typeof entry.status === 'string') {
+          if (entry.status !== lastGateStatus.current) changed = true
+          lastGateStatus.current = entry.status
           setGate((prev) => gateFromEntry(entry, prev))
         }
       } catch {
         // keep the last known status
       }
+      return changed
     }
 
-    void refresh()
-
-    let stopPoll = () => {}
-    if (typeof ctx.setInterval === 'function') {
-      const handle = ctx.setInterval(() => {
-        void refresh()
-      }, POLL_MS)
-      stopPoll = () => {
-        if (typeof ctx.clearInterval === 'function') ctx.clearInterval(handle)
-      }
-    } else if (typeof ctx.setTimeout === 'function') {
-      let timer
-      const loop = () => {
-        timer = ctx.setTimeout(() => {
-          void refresh().finally(() => {
-            if (!cancelled) loop()
-          })
-        }, POLL_MS)
-      }
-      loop()
-      stopPoll = () => {
-        if (typeof ctx.clearTimeout === 'function') ctx.clearTimeout(timer)
-      }
-    }
+    const lastGateStatus = { current: null }
+    const setTimer = (fn, ms) =>
+      typeof ctx.setTimeout === 'function' ? ctx.setTimeout(fn, ms) : setTimeout(fn, ms)
+    const clearTimer = (h) =>
+      typeof ctx.clearTimeout === 'function' ? ctx.clearTimeout(h) : clearTimeout(h)
+    const hasDoc = typeof document !== 'undefined'
+    const refresher = createRefresher({
+      refresh,
+      setTimer,
+      clearTimer,
+      isHidden: () => hasDoc && document.hidden === true,
+      onVisibility: (cb) => {
+        if (!hasDoc) return undefined
+        document.addEventListener('visibilitychange', cb)
+        return () => document.removeEventListener('visibilitychange', cb)
+      },
+    })
+    pokeRef.current = () => refresher.poke()
+    refresher.start()
 
     let stopSocket = () => {}
-    if (ctx.socket && typeof ctx.socket.on === 'function') {
-      const off = ctx.socket.on('surfaces', () => {
-        void refresh()
-      })
-      stopSocket = () => {
-        if (typeof off === 'function') off()
-        else if (ctx.socket && typeof ctx.socket.off === 'function') ctx.socket.off('surfaces')
+    if (typeof ctx.socket === 'function') {
+      try {
+        const dispose = ctx.socket(
+          '/surfaces/ws?surface_id=' + encodeURIComponent(surfaceId),
+          (raw) => {
+            if (cancelled) return
+            let msg = raw
+            if (typeof raw === 'string') {
+              try {
+                msg = JSON.parse(raw)
+              } catch {
+                return
+              }
+            }
+            if (!msg || typeof msg !== 'object') return
+            refresher.setSocketConnected(true)
+            if (msg.type !== 'revision') return
+            if (msg.surface_id && msg.surface_id !== surfaceId) return
+            const rev = Number(msg.revision)
+            if (Number.isFinite(rev) && rev > appliedRevision) refresher.refreshNow()
+          },
+        )
+        if (typeof dispose === 'function') stopSocket = dispose
+      } catch {
+        // polling still works
       }
     }
 
     return () => {
       cancelled = true
-      stopPoll()
+      pokeRef.current = null
+      refresher.stop()
       stopSocket()
     }
-  }, [surfaceId, ctx])
+  }, [surfaceId, ctx, superseded])
 
   // Never open file.path. The media file is only a transcript hook.
   void file
 
   if (!surfaceId) return fallback || null
+
+  if (superseded) {
+    return jsx('div', {
+      className: 'uirizz-card',
+      'data-uirizz': 'superseded',
+      style: { fontSize: '12px', opacity: 0.7 },
+      children: `Updated below (revision ${supersededBy})`,
+    })
+  }
 
   if (loadError && !surface) {
     const text =
@@ -271,9 +379,27 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
     })
   }
 
+  const fallbackText =
+    (payload && typeof payload.fallback_text === 'string' && payload.fallback_text) ||
+    (parsedResult && typeof parsedResult.fallback_text === 'string' && parsedResult.fallback_text) ||
+    ''
+  const canOpenCanvas = !canvas && host && typeof host.openWorkspace === 'function'
+  const openCanvas = () => {
+    try {
+      host.openWorkspace('uirizz-' + surfaceId, {
+        title: firstLine(fallbackText, 60) || 'uirizz card',
+        render: () =>
+          jsx(SurfaceCard, { file, args, result, sessionId, fallback, ctx, host, variant: 'canvas' }),
+      })
+    } catch {
+      // canvas is optional
+    }
+  }
+
   return jsxs('div', {
     className: 'uirizz-card',
     'data-uirizz': 'ready',
+    'data-variant': canvas ? 'canvas' : undefined,
     'data-surface-id': surfaceId,
     'data-revision': payload && payload.revision != null ? String(payload.revision) : undefined,
     style: {
@@ -281,8 +407,32 @@ export function SurfaceCard({ file, args, result, sessionId, fallback, ctx }) {
       border: '1px solid var(--ui-border, var(--border))',
       borderRadius: '8px',
       padding: '8px',
+      ...(canvas ? { width: '100%', boxSizing: 'border-box' } : { maxHeight: '480px', overflow: 'auto' }),
     },
     children: [
+      canOpenCanvas
+        ? jsx('div', {
+            'data-uirizz-header': '',
+            style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '4px' },
+            children: jsx('button', {
+              type: 'button',
+              'data-uirizz-open-canvas': '',
+              'aria-label': 'Open in canvas',
+              title: 'Open in canvas',
+              onClick: openCanvas,
+              style: {
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                border: '1px solid var(--ui-border, var(--border))',
+                background: 'transparent',
+                color: 'inherit',
+                cursor: 'pointer',
+              },
+              children: 'Open in canvas',
+            }),
+          })
+        : null,
       gate && gate.binding
         ? jsxs('div', {
             'data-uirizz-gate': gate.status,

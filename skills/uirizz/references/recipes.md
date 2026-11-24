@@ -87,12 +87,12 @@ root = Card(Column([Row([Icon("warning"), Text("**Waiting for your yes in chat**
 ## 7. Progress monitor
 
 Use for: a job you will report on more than once. Present once, then send only
-data with `op=update` (see Updates below). A read-only Slider stands in for a
+data with `op=update` (see Updates below). The Progress component draws the
 progress bar.
 
 ```express
 $/job = {pct: 35, step: "Migrating table 4 of 11", eta: "about 7 min"}
-root = Card(Column([Text("## Database migration"), Slider("Progress", 0, 100, $/job/pct), Text($/job/step), Text(formatString("ETA ${/job/eta}"), "caption")]))
+root = Card(Column([Text("## Database migration"), Progress($/job/pct, 100, "Progress"), Text($/job/step), Text(formatString("ETA ${/job/eta}"), "caption")]))
 ```
 
 ## 8. Peer views with Tabs

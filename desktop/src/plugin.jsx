@@ -35,7 +35,7 @@ export default {
       area: sdk.TOOL_MEDIA_RENDERER_AREA,
       data: {
         tools: ['a2ui_render'],
-        render: (props) => jsx(SurfaceCard, { ...props, ctx }),
+        render: (props) => jsx(SurfaceCard, { ...props, ctx, host: sdk.host }),
       },
     })
   },

@@ -1,0 +1,117 @@
+{
+  "$comment": "uirizz/1 components. The contract for both halves: scripts/build_catalog.py merges these into the Basic Catalog to make uirizz_v1.json (agent side), and desktop/src/components/* implement them (renderer side). Change props here first.",
+  "catalogId": "https://github.com/mojomast/uirizz/catalogs/v1/catalog.json",
+  "title": "uirizz catalog v1",
+  "instructions": "uirizz adds data components to the Basic Catalog. Use Chart for numeric series and breakdowns, DataTable for rows of records, Metric for a headline number, Progress for completion, Badge for a status word, Callout for a highlighted note, KeyValueList for label/value pairs, Timeline for dated events, CodeBlock for code or logs. Keep the numbers in the data model and bind them with $/paths so op=update can change only the data. Never encode numbers as text inside Text components when a Chart, DataTable or Metric fits.",
+  "components": {
+    "Chart": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "Chart"},
+        "type": {"enum": ["line", "area", "bar", "stackedBar", "horizontalBar", "scatter", "pie", "donut"], "type": "string", "description": "Chart type. line/area for trends over x, bar/stackedBar/horizontalBar to compare categories, scatter for two numeric fields, pie/donut for parts of a whole (6 slices or fewer)."},
+        "data": {"$ref": "common_types.json#/$defs/DynamicValue", "description": "Bind to an array of row objects in the data model, e.g. $/sales."},
+        "x": {"type": "string", "description": "Row field used for the x axis, the bar categories, or the slice names."},
+        "series": {"type": "array", "minItems": 1, "maxItems": 12, "items": {"type": "object", "properties": {"field": {"type": "string", "description": "Numeric row field to plot."}, "label": {"type": "string", "description": "Legend label."}}, "required": ["field"], "additionalProperties": false}, "description": "Numeric row fields to plot, one per series. pie/donut use only the first."},
+        "title": {"$ref": "common_types.json#/$defs/DynamicString", "description": "Short title shown above the chart."},
+        "format": {"enum": ["number", "percent", "currency", "compact"], "type": "string", "default": "number", "description": "How values are shown on the axis and in tooltips."},
+        "currency": {"type": "string", "description": "ISO 4217 code when format is currency, e.g. USD."},
+        "height": {"enum": ["small", "medium", "large"], "type": "string", "default": "medium", "description": "Chart height."},
+        "selection": {"$ref": "common_types.json#/$defs/DataBinding", "description": "Data path where the clicked row is written, e.g. $/ui/picked. Bind it in the action context to send it."},
+        "action": {"$ref": "common_types.json#/$defs/Action", "description": "Fired after a point, bar or slice is clicked and selection is written."},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "type", "data", "x", "series"]
+    },
+    "DataTable": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "DataTable"},
+        "data": {"$ref": "common_types.json#/$defs/DynamicValue", "description": "Bind to an array of row objects in the data model."},
+        "columns": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object", "properties": {"field": {"type": "string"}, "label": {"type": "string"}, "align": {"enum": ["start", "end", "center"], "type": "string"}, "format": {"enum": ["text", "number", "percent", "currency", "date"], "type": "string"}}, "required": ["field"], "additionalProperties": false}, "description": "Columns in display order."},
+        "title": {"$ref": "common_types.json#/$defs/DynamicString", "description": "Short caption above the table."},
+        "pageSize": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "Rows per page."},
+        "sortable": {"type": "boolean", "default": true, "description": "Let the user sort by clicking a header."},
+        "currency": {"type": "string", "description": "ISO 4217 code for currency columns."},
+        "selection": {"$ref": "common_types.json#/$defs/DataBinding", "description": "Data path where the clicked row is written."},
+        "action": {"$ref": "common_types.json#/$defs/Action", "description": "Fired after a row is clicked and selection is written."},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "data", "columns"]
+    },
+    "Metric": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "Metric"},
+        "label": {"$ref": "common_types.json#/$defs/DynamicString", "description": "What the number measures."},
+        "value": {"$ref": "common_types.json#/$defs/DynamicString", "description": "The headline value, already formatted."},
+        "delta": {"$ref": "common_types.json#/$defs/DynamicString", "description": "Optional change, e.g. +4.2% vs last week."},
+        "trend": {"enum": ["up", "down", "flat"], "type": "string", "description": "Direction of the change."},
+        "status": {"enum": ["good", "warning", "critical", "neutral"], "type": "string", "default": "neutral", "description": "Colour meaning of the change."},
+        "sparkline": {"$ref": "common_types.json#/$defs/DynamicValue", "description": "Optional array of numbers drawn as a small trend line."},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "label", "value"]
+    },
+    "Progress": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "Progress"},
+        "value": {"$ref": "common_types.json#/$defs/DynamicNumber", "description": "Current amount."},
+        "max": {"$ref": "common_types.json#/$defs/DynamicNumber", "description": "Amount at 100%. Defaults to 100."},
+        "label": {"$ref": "common_types.json#/$defs/DynamicString", "description": "What is progressing."},
+        "status": {"enum": ["good", "warning", "critical", "neutral"], "type": "string", "default": "neutral"},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "value"]
+    },
+    "Badge": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "Badge"},
+        "text": {"$ref": "common_types.json#/$defs/DynamicString", "description": "One or two words."},
+        "status": {"enum": ["good", "warning", "critical", "neutral", "info"], "type": "string", "default": "neutral"},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "text"]
+    },
+    "Callout": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "Callout"},
+        "text": {"$ref": "common_types.json#/$defs/DynamicString", "description": "The note. Simple Markdown is allowed."},
+        "tone": {"enum": ["info", "success", "warning", "critical"], "type": "string", "default": "info"},
+        "title": {"$ref": "common_types.json#/$defs/DynamicString", "description": "Optional bold first line."},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "text"]
+    },
+    "KeyValueList": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "KeyValueList"},
+        "items": {"$ref": "common_types.json#/$defs/DynamicValue", "description": "Bind to an array of {key, value} objects."},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "items"]
+    },
+    "Timeline": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "Timeline"},
+        "items": {"$ref": "common_types.json#/$defs/DynamicValue", "description": "Bind to an array of {date, title, detail?, status?} objects, oldest first. status is good, warning, critical or neutral."},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "items"]
+    },
+    "CodeBlock": {
+      "type": "object",
+      "properties": {
+        "component": {"const": "CodeBlock"},
+        "code": {"$ref": "common_types.json#/$defs/DynamicString", "description": "The code or log text."},
+        "language": {"type": "string", "description": "Optional language name shown as a label, e.g. python."},
+        "weight": {"$ref": "#/$defs/Weight"}
+      },
+      "required": ["component", "code"]
+    }
+  }
+}

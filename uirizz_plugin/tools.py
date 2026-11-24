@@ -13,6 +13,8 @@ from uirizz_plugin.catalog import (
     BASIC_COMPONENTS,
     LIMITS,
     MVP_COMPONENTS,
+    UIRIZZ_CATALOG_ID,
+    UIRIZZ_COMPONENTS,
 )
 from uirizz_plugin.register_util import call_register_tool
 from uirizz_plugin.store import (
@@ -37,6 +39,8 @@ __all__ = [
     "BASIC_COMPONENTS",
     "LIMITS",
     "MVP_COMPONENTS",
+    "UIRIZZ_CATALOG_ID",
+    "UIRIZZ_COMPONENTS",
     "TOOL_NAME",
     "handle_a2ui_render",
     "parse_tool_result",
@@ -82,8 +86,8 @@ A2UI_RENDER_SCHEMA: dict[str, Any] = {
             },
             "topic": {
                 "type": "string",
-                "enum": ["recipes", "express", "actions"],
-                "description": "With op=describe: recipes, Express cheat sheet, or declared actions.",
+                "enum": ["recipes", "express", "actions", "components"],
+                "description": "With op=describe: recipes, Express cheat sheet, actions, or components.",
             },
             "action_id": {
                 "type": "string",
@@ -127,7 +131,7 @@ def _error(code: str, error: str, fix: str, **extra: Any) -> str:
 
 
 _REFERENCES = Path(__file__).resolve().parent.parent / "skills" / "uirizz" / "references"
-DESCRIBE_TOPICS = {"recipes": "recipes.md", "express": "express.md", "actions": None}
+DESCRIBE_TOPICS = {"recipes": "recipes.md", "express": "express.md", "actions": None, "components": "components.md"}
 
 _ACTIONS_HOWTO = (
     "Declared actions bind a button to one exact tool call. Wire one with "
@@ -150,7 +154,7 @@ def describe_topic(topic: str) -> dict[str, Any]:
         raise AdmissionError(
             "invalid_payload",
             f"Unknown describe topic {topic!s}.",
-            "Use topic=recipes, topic=express or topic=actions, or omit topic.",
+            "Use topic=recipes, express, actions or components, or omit topic.",
         )
     path = _REFERENCES / name
     if not path.is_file():
@@ -172,6 +176,13 @@ def describe_payload() -> dict[str, Any]:
         "catalog_id": BASIC_CATALOG_ID,
         "components": list(MVP_COMPONENTS),
         "basic_catalog_components": list(BASIC_COMPONENTS),
+        "uirizz_catalog_id": UIRIZZ_CATALOG_ID,
+        "uirizz_components": list(UIRIZZ_COMPONENTS),
+        "uirizz_note": (
+            "Chart, DataTable, Metric, Progress, Badge, Callout, KeyValueList, Timeline and "
+            "CodeBlock are available in Express and in jsonl with catalogId set to uirizz_catalog_id. "
+            "op=describe topic=components has props and examples."
+        ),
         "deferred_components": ["Video", "AudioPlayer"],
         "functions_disabled": ["openUrl"],
         "limits": {
@@ -220,6 +231,7 @@ def describe_payload() -> dict[str, Any]:
             "recipes": "op=describe topic=recipes: tested Express for status, compare, form, pick, list, confirm, progress, tabs",
             "express": "op=describe topic=express: grammar, signatures, icon names, gotchas",
             "actions": "op=describe topic=actions: buttons bound to exact tool calls (deploy, send, ...)",
+            "components": "op=describe topic=components: Chart, DataTable, Metric, Progress, Badge, Callout, KeyValueList, Timeline, CodeBlock",
         },
     }
 
@@ -228,9 +240,20 @@ def _fail(exc: AdmissionError | StoreError | GateError) -> str:
     return _error(exc.code, exc.error, exc.fix)
 
 
-def _require_fallback(payload: dict[str, Any], *, required: bool) -> str | None:
+def _require_fallback(
+    payload: dict[str, Any],
+    *,
+    required: bool,
+    messages: list[dict[str, Any]] | None = None,
+) -> str | None:
     text = payload.get("fallback_text")
     if text is None or (isinstance(text, str) and not text.strip()):
+        if required and messages is not None:
+            from uirizz_plugin.fallback import generate_fallback
+
+            generated = generate_fallback(messages)
+            if generated.strip():
+                return generated
         if required:
             raise AdmissionError(
                 "missing_fallback_text",
@@ -358,11 +381,30 @@ def _rebind(messages: list[dict[str, Any]], surface_id: str, *, update: bool) ->
     return out
 
 
-def _op_present(payload: dict[str, Any]) -> str:
-    fallback = _require_fallback(payload, required=True)
-    assert fallback is not None
+def _clean_id(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _check_conversation(existing: dict[str, Any], conversation_id: str | None) -> None:
+    stored = _clean_id(existing.get("conversation_id"))
+    if stored and conversation_id and stored != conversation_id:
+        raise StoreError(
+            "wrong_conversation",
+            "That card belongs to another conversation.",
+            "Present a new card in this conversation.",
+        )
+
+
+def _op_present(
+    payload: dict[str, Any],
+    session_id: str | None = None,
+    conversation_id: str | None = None,
+) -> str:
     jsonl = _jsonl_from_args(payload)
     admitted = admit_jsonl(jsonl, require_root=True)
+    had_fallback = isinstance(payload.get("fallback_text"), str) and bool(payload["fallback_text"].strip())
+    fallback = _require_fallback(payload, required=True, messages=admitted["messages"])
+    assert fallback is not None
     # Express compiles every surface as "main". Using that as the stored id made
     # every second present collide with the first (possibly another chat's) card.
     # Only an explicit surface_id, or a surfaceId the model wrote in raw jsonl,
@@ -386,12 +428,28 @@ def _op_present(payload: dict[str, Any]) -> str:
         "messages": _rebind(admitted["messages"], surface_id, update=False),
         "component_count": admitted["component_count"],
         "component_ids": admitted["component_ids"],
+        "session_id": session_id,
+        "conversation_id": conversation_id,
     }
     put_surface(record)
-    return _success("present", record, _action_warnings(record["messages"]))
+    out = _success("present", record, _action_warnings(record["messages"]))
+    if not had_fallback:
+        out = _mark_generated(out)
+    return out
 
 
-def _op_update(payload: dict[str, Any]) -> str:
+def _mark_generated(result: str) -> str:
+    body = parse_tool_result(result)
+    tail = result.lstrip()[len(_dumps(body)):]
+    body["fallback_generated"] = True
+    return _dumps(body) + tail
+
+
+def _op_update(
+    payload: dict[str, Any],
+    session_id: str | None = None,
+    conversation_id: str | None = None,
+) -> str:
     surface_id = normalize_surface_id(payload.get("surface_id"), required=True)
     existing = get_surface(surface_id)
     if existing is None:
@@ -400,9 +458,18 @@ def _op_update(payload: dict[str, Any]) -> str:
             f"No surface named {surface_id} is stored.",
             "Call op=present first, or pass a surface_id returned by a previous present.",
         )
+    _check_conversation(existing, conversation_id)
     fallback = _require_fallback(payload, required=False) or existing["fallback_text"]
     jsonl = _jsonl_from_args(payload, prior=existing)
-    admitted = admit_jsonl(jsonl, require_root=False)
+    admitted = admit_jsonl(
+        jsonl,
+        require_root=False,
+        uirizz_surface=any(
+            isinstance(m.get("createSurface"), dict)
+            and m["createSurface"].get("catalogId") == UIRIZZ_CATALOG_ID
+            for m in (existing.get("messages") or [])
+        ),
+    )
     # Fail-closed: reporting a side effect as done needs a live user approval.
     # Checked before anything is stored, so a rejected report changes nothing.
     action_id = payload.get("action_id")
@@ -417,13 +484,25 @@ def _op_update(payload: dict[str, Any]) -> str:
         + _rebind(admitted["messages"], surface_id, update=True),
         "component_count": admitted["component_count"] or existing.get("component_count", 0),
         "component_ids": admitted["component_ids"] or existing.get("component_ids", []),
+        "session_id": existing.get("session_id"),
+        "conversation_id": existing.get("conversation_id"),
     }
+    from uirizz_plugin.compact import maybe_compact
+
+    record["messages"] = maybe_compact(record["messages"])
     put_surface(record)
     return _success("update", record, _action_warnings(_rebind(admitted["messages"], surface_id, update=True)))
 
 
-def _op_delete(payload: dict[str, Any]) -> str:
+def _op_delete(
+    payload: dict[str, Any],
+    session_id: str | None = None,
+    conversation_id: str | None = None,
+) -> str:
     surface_id = normalize_surface_id(payload.get("surface_id"), required=True)
+    existing = get_surface(surface_id)
+    if existing is not None:
+        _check_conversation(existing, conversation_id)
     if not delete_surface(surface_id):
         raise StoreError(
             "not_found",
@@ -436,10 +515,12 @@ def _op_delete(payload: dict[str, Any]) -> str:
     return _dumps({"ok": True, "op": "delete", "surface_id": surface_id})
 
 
-def handle_a2ui_render(args: dict | None) -> str:
+def handle_a2ui_render(args: dict | None, **kwargs: Any) -> str:
     """Registered handler. Always returns a json.dumps string."""
     try:
         payload = args if isinstance(args, dict) else {}
+        session_id = _clean_id(kwargs.get("session_id"))
+        conversation_id = _clean_id(kwargs.get("conversation_id"))
         op = payload.get("op")
         if not isinstance(op, str) or not op:
             return _error(
@@ -464,11 +545,11 @@ def handle_a2ui_render(args: dict | None) -> str:
             )
         try:
             if op == "present":
-                return _op_present(payload)
+                return _op_present(payload, session_id, conversation_id)
             if op == "update":
-                return _op_update(payload)
+                return _op_update(payload, session_id, conversation_id)
             if op == "delete":
-                return _op_delete(payload)
+                return _op_delete(payload, session_id, conversation_id)
         except (AdmissionError, StoreError, GateError) as exc:
             return _fail(exc)
         return _error(

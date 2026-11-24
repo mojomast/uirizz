@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 
 from uirizz_plugin.store import _surfaces_dir
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 MAX_HINT = 600
+_hint_lock = threading.Lock()
+_last_hints = {}
 PREFIX = (
     "uirizz cards already in this chat (to change one, call a2ui_render op=update "
     "with its surface_id instead of presenting again): "
@@ -56,10 +59,17 @@ def active_cards_hint(session_id: str | None, conversation_id: str | None, limit
     if scope is None:
         return None
     try:
-        files = sorted(_surfaces_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        root = _surfaces_dir()
+        files = sorted(root.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     except OSError:
         return None
     items = _items(files, scope[0], scope[1], limit)
+    fingerprint = tuple(sorted(items))
+    cache_key = (root, scope)
+    with _hint_lock:
+        if _last_hints.get(cache_key) == fingerprint:
+            return None
+        _last_hints[cache_key] = fingerprint
     if not items:
         return None
     return (PREFIX + "; ".join(items))[:MAX_HINT]

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- A bare `yes` now approves only a lone `risk: low` declared action. Medium,
+  high and free-form side-effect clicks need `yes <code>`; with more than one
+  open action a bare `yes` decides nothing and the notice asks for the code.
+  Cards show `code_required` accordingly. (rizzstack review, Track C #14)
+- `auto_approve` is refused for shell, exec and code-execution tools, both when
+  the definition loads and again at click time. (Track C #19)
+- A typed yes on a free-form card action no longer unlocks shell, exec or
+  code-execution tools. For the 600-second approval window, even after the
+  action is marked done, those tools stay blocked unless a declared action the
+  user approved covers the exact call. Other tools behave as before.
+  (rizzstack decision 2, option b)
+
 ### Added (next level)
 
 - uirizz/1 catalog: Chart, DataTable, Metric, Progress, Badge, Callout,
@@ -48,6 +62,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `compile_express` now normalizes `surface_id` before interpolating the
   auto-added `surface(..., update=true)` header, and compiler error details
   redact paths and tracebacks.
+- Audit log rotation (5 MB) no longer resets the gate: the new file carries
+  every open action plus anything inside the per-hour and replay windows, and
+  links to the old chain with a `rotated` entry. Rotation now happens under
+  the lock. (rizzstack review, Track C #16)
+- Read-decide-write in the gate (clicks, typed replies, tool consumption,
+  outcomes) now holds one cross-process lock (`audit/actions.lock`), so one
+  approval can no longer run once per Hermes process and concurrent clicks on
+  one control leave exactly one pending. Per-hour limits are re-checked when
+  the user approves, not only at click time. (Track C #17)
 
 ### Added
 
@@ -64,6 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tested Express recipes and a cheat sheet, compiled in CI.
 - `evals/behavior_scenarios.json`: model-in-the-loop scenarios and checks.
 - `docs/IMPROVEMENTS.md`: review findings and next steps.
+- docs/ACTIONS.md "What the gate is, and what it is not": free-form approvals
+  are not enforced in code, the gate is not a boundary against a compromised
+  agent or shell access, `POST /actions` trusts its `session_id`, and the
+  audit chain has no key (catches accidental edits, not rewrites). Same in
+  README and the skill. (rizzstack review, Track C #15, #19, #20)
 
 ### Changed
 
@@ -74,6 +102,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README how-it-works shots retaken after these fixes: two cards with
   distinct ids, an in-place data-only update with no duplicate, compiler
   recovery, a prose-only turn, and the approval-gate flow.
+- Read-only clicks waiting for the agent now come from the audit log on disk
+  instead of process memory, so a click recorded by the dashboard process
+  reaches an agent in another process (for example `hermes dashboard` and
+  `hermes gateway` run as separate services). Each click is delivered once,
+  at most the newest 20 per turn and only within 10 minutes, and its context
+  is the audit log's sanitized, secret-redacted copy. (rizzstack review,
+  Track C #18)
 
 ## [0.1.0] — 2026-11-23
 

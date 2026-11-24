@@ -11,8 +11,11 @@ from uirizz_plugin.store import get_surface
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 
-# Session-scoped pending actions. Keyed only by session_id.
-_PENDING: dict[str, list[dict[str, Any]]] = {}
+# Read-only clicks waiting for the agent live in the audit log on disk (the
+# dashboard router and the agent can be different processes). At most this
+# many of the newest are delivered per turn, and only if younger than the TTL.
+MAX_PENDING_CLICKS = 20
+PENDING_CLICK_TTL_S = 600
 
 
 def _sanitize_text(value: Any) -> str:
@@ -72,8 +75,6 @@ def record_action(
         rec["rejected"] = folded.get("rejected")
     else:
         rec["status"] = "pending_confirmation" if rec["requires_confirmation"] else "recorded"
-    bucket = _PENDING.setdefault(session_id, [])
-    bucket.append(rec)
     return rec
 
 
@@ -106,9 +107,11 @@ def pending_context_for_session(session_id: str | None) -> str | None:
         return None
     # Deliver each click once. pre_llm_call context is ephemeral (not stored in
     # the transcript), but re-injecting the same clicks every turn told the model
-    # to update the card again on every later message. Gated clicks are not lost:
-    # the approval gate re-reads them from the audit log each turn.
-    actions = _PENDING.pop(session_id, [])
+    # to update the card again on every later message. Gated clicks are not
+    # handled here: the approval gate re-reads them from the audit log each turn.
+    # The click context comes from the audit log, so it is already sanitized,
+    # size-capped and secret-redacted.
+    actions = gate.take_recorded_clicks(session_id, limit=MAX_PENDING_CLICKS, ttl_s=PENDING_CLICK_TTL_S)
     text = _format_context(actions) if actions else ""
     return text or None
 
@@ -122,7 +125,10 @@ def pre_llm_call_context(**kwargs: Any) -> dict[str, str] | None:
     except Exception:  # noqa: BLE001 — fail closed: no decision is recorded
         pass
     pieces: list[str] = []
-    text = pending_context_for_session(sid)
+    try:
+        text = pending_context_for_session(sid)
+    except Exception:  # noqa: BLE001 - an unreadable log drops view clicks, never the gate notice
+        text = None
     if text:
         pieces.append(text)
     try:

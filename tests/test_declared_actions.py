@@ -75,7 +75,6 @@ def _env(tmp_path):
     set_store_dir(tmp_path)
     bindings.set_actions_dir(tmp_path)
     (tmp_path / "actions.yaml").write_text(ACTIONS_YAML, encoding="utf-8")
-    actions._PENDING.clear()
     put_surface({"surface_id": SURF, "revision": 1, "fallback_text": "Card", "messages": [],
                  "component_count": 1, "component_ids": ["root"]})
     yield tmp_path
@@ -83,7 +82,6 @@ def _env(tmp_path):
     for name in list(bindings._api_defs):
         bindings.unregister_action(name)
     set_store_dir(None)
-    actions._PENDING.clear()
 
 
 def _click(event, context, session=SID):
@@ -242,10 +240,12 @@ def test_high_risk_flow_needs_code_then_runs_exactly_once():
     assert _call("terminal", {"command": "ls"}) is None  # gate is idle again
 
 
-def test_medium_risk_accepts_a_bare_yes():
+def test_medium_risk_needs_the_code_since_track_c_14():
     rec = _click("send_note", {"to": "kyle", "body": "hi"})
     _turn("sent?")
-    _turn("yes")
+    _turn("yes")  # a bare yes may answer another question
+    assert _act(rec["action_id"])["status"] == "pending_confirmation"
+    _turn("yes " + rec["action_id"].replace("act-", "")[:6])
     assert _act(rec["action_id"])["status"] == "approved"
     assert _call("send_message", {"to": "kyle", "body": "hi", "tags": []}) is None
 
@@ -283,7 +283,7 @@ def test_rate_limit_rejects_extra_clicks():
     for _ in range(2):
         rec = _click("send_note", {"to": "kyle", "body": "x"})
         _turn("x")
-        _turn("yes")
+        _turn("yes " + rec["action_id"].replace("act-", "")[:6])
         assert _act(rec["action_id"])["status"] == "approved"
     third = _click("send_note", {"to": "kyle", "body": "x"})
     assert third["status"] == "rejected" and "rate limit" in third["rejected"]
@@ -404,13 +404,18 @@ def test_present_warns_about_misused_declared_actions():
     assert "snooze_alert" not in warnings  # a $/path binding is checked at click time
 
 
-def test_undeclared_events_behave_exactly_as_before():
+def test_undeclared_events_need_the_code_then_behave_as_before():
     rec = _click("deploy", {"side_effect": True})
     assert rec["declared"] is False and rec["binding"] is None
     _turn("x")
-    _turn("yes")
+    _turn("yes")  # Track C #14: free-form side effects need `yes <code>`
+    assert _act(rec["action_id"])["status"] == "pending_confirmation"
+    _turn("yes " + rec["action_id"].replace("act-", "")[:6])
     assert _act(rec["action_id"])["status"] == "approved"
-    assert _call("terminal", {"command": "anything"}) is None  # unbound approval, as today
+    # Decision 2 option (b): an unbound yes never unlocks shell/exec/code tools,
+    # other tools behave as before.
+    assert _call("terminal", {"command": "anything"})["action"] == "block"
+    assert _call("send_message", {"to": "kyle"}) is None
 
 
 def test_shipped_example_file_is_valid():

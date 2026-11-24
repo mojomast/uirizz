@@ -14,11 +14,13 @@ from uirizz_plugin.tools import handle_a2ui_render, parse_tool_result
 
 @pytest.fixture(autouse=True)
 def _store(tmp_path):
+    # Pending clicks live in the audit log under the plugin data dir (#28), so a fresh
+    # store dir is a fresh queue. Assert it rather than trusting it.
     set_store_dir(tmp_path)
-    actions._PENDING.clear()
+    assert gate.session_actions(None) == []
+    assert actions.pending_context_for_session("s1") is None
     yield
     set_store_dir(None)
-    actions._PENDING.clear()
 
 
 def _present(text="Hi", **kw):
@@ -105,7 +107,14 @@ def test_card_prefixed_yes_is_not_approval():
         pre_llm_call(session_id="s1", user_message=text)
         status = next(a["status"] for a in gate.session_actions(None) if a["action_id"] == rec["action_id"])
         assert status == "pending_confirmation"
+    # A free-form side effect needs `yes <code>`; a bare yes is not enough either.
     pre_llm_call(session_id="s1", user_message="yes")
+    status = next(a["status"] for a in gate.session_actions(None) if a["action_id"] == rec["action_id"])
+    assert status == "pending_confirmation"
+    pre_llm_call(session_id="s1", user_message=f"[card] yes {gate._short(rec['action_id'])}")
+    status = next(a["status"] for a in gate.session_actions(None) if a["action_id"] == rec["action_id"])
+    assert status == "pending_confirmation"
+    pre_llm_call(session_id="s1", user_message=f"yes {gate._short(rec['action_id'])}")
     status = next(a["status"] for a in gate.session_actions(None) if a["action_id"] == rec["action_id"])
     assert status == "approved"
 

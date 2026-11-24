@@ -61,6 +61,16 @@ Snake_case Material names (`check_circle`, `trending_up`) are rejected.
 `formatDate(value, "MMM d, yyyy")`, `pluralize(count, one="item", other="items")`,
 `and([...])`, `or([...])`, `not(x)`. `openUrl` is disabled in uirizz.
 
+## Notes from the skill index
+
+- One `root`; children in `[...]`. `Card` takes one child.
+- `Text` variants are only `caption`/`body`; headings are Markdown in the
+  string: `Text("## Title")`. Bind values as `$/path`, not `"${/path}"`
+  (interpolate with `formatString("${/n} open")`).
+- Icon names are camelCase (`check`, `warning`), never snake_case.
+- Checks are positional: `?required("msg")`, `?length(2, 40, "msg")`.
+- Update values only: `$/kpi/rps = "1,310"` becomes `updateDataModel`.
+
 ## Gotchas found in testing
 
 - Headings: Text has no `h1`-`h5` variant. Use Markdown in the string:

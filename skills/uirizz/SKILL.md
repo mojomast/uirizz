@@ -1,36 +1,35 @@
 ---
 name: uirizz
 description: >-
-  Show a live A2UI card in Hermes Desktop and Webapp chat with a2ui_render:
-  status boards, comparisons, forms, pickers, result lists, progress monitors
-  and confirm steps. Use when the user will scan, compare, fill in or watch
-  structured data. Not for ordinary Q&A.
+  Show a live A2UI card in Desktop and Web chat with a2ui_render:
+  boards, comparisons, forms, pickers, lists and confirm steps. Use when the
+  user will scan, compare, fill in or watch structured data. Not for ordinary
+  Q&A.
 ---
 
 # uirizz
 
-Skill id `uirizz:uirizz` (pass exactly that to `skill_view`). If `a2ui_render`
-is not visible, call `tool_search(["uirizz"])`.
+Skill id `uirizz:uirizz` (pass to `skill_view`). If `a2ui_render` is hidden,
+call `tool_search(["uirizz"])`.
 
 ## When to use
 
-The user will **scan, compare, fill in, choose or watch**: 3+ numbers or items
-with shared attributes, a choice between options, a form of 3+ fields, a job
-you will report on again, or a confirm step. At most one new card per reply.
+The user will **scan, compare, fill in, choose or watch**: 3+ numbers or items,
+a choice between options, a form of 3+ fields, a job you report on again, or a
+confirm step. At most one new card per reply.
 
 ## When not to use
 
-- Ordinary Q&A, explanations, opinions, code, a single fact, one or two
-  questions (ask in chat), sensitive talk, or the user asked for text: prose.
-  When unsure, prose.
+- Ordinary Q&A, explanations, opinions, code, one fact, 1-2 questions (ask in
+  chat), sensitive talk, or a request for text: prose. When unsure, prose.
 - Never build a card with shell, code, gh, git or HTML/JSX; only `a2ui_render`.
 
 ## Workflow
 
-1. Start from a tested recipe: `op=describe topic=recipes` (once per chat);
-   `topic=express` has signatures and icon names.
+1. Start from a tested recipe (`op=describe topic=recipes` once per chat);
+   syntax/signatures/icons: `op=describe topic=express`.
 2. `op=present` with `express` and `fallback_text`.
-3. Reply with the result's `MEDIA:` line alone on its own line, then one or two
+3. Reply with the `MEDIA:` line alone on its own line, then one or two
    sentences on what to look at or do next. Do not restate the card.
 
 ## Hard rules
@@ -47,35 +46,16 @@ you will report on again, or a confirm step. At most one new card per reply.
 
 ## Errors
 
-On `ok=false` read `code`, `error` (the compiler names the line and allowed
-values) and `fix`; change only that and retry. After two failures answer in
-prose. `missing_fallback_text`: add it. `not_approved`: wait for a typed yes.
-
-## Express essentials
-
-```express
-$/kpi = {rps: "1,240", errors: "0.2%"}
-root = Column([Text("## checkout-api"), Row([a, b])])
-a = Card(Column([Text("Requests / s", "caption"), Text($/kpi/rps)]), weight=1)
-b = Card(Column([Text("Error rate", "caption"), Text($/kpi/errors)]), weight=1)
-```
-
-- One `root`; children in `[...]`. `Card` takes one child.
-- `Text` variants are only `caption`/`body`; headings are Markdown in the
-  string: `Text("## Title")`. Bind values as `$/path`, not `"${/path}"`
-  (interpolate with `formatString("${/n} open")`).
-- Icon names are camelCase (`check`, `warning`), never snake_case.
-- Checks are positional: `?required("msg")`, `?length(2, 40, "msg")`.
-- Update values only: `$/kpi/rps = "1,310"` becomes `updateDataModel`.
+On `ok=false` read `code`, `error`, `fix`; change only that and retry.
+After two failures answer in prose. `missing_fallback_text`: required; add it.
+`not_approved`: wait for a typed yes.
 
 ## Data components
 
-Numbers and records go in uirizz components, not rows of Text: `Chart`,
-`DataTable`, `Metric`, `Progress`, `Badge`, `Callout`, `KeyValueList`,
-`Timeline`, `CodeBlock`. Signatures and tested examples:
-`op=describe topic=components`. A Chart or DataTable
-writes the clicked row to `selection=$/ui/x`; send it with
-`Event("drill", {row: $/ui/x, read_only: true})`.
+`Chart`, `DataTable`, `Metric`, `Progress`, `Badge` and more for numbers and
+records, not Text rows; see `op=describe topic=components`. Clicked rows go to
+`selection=$/ui/x` via `Event("drill", {row: $/ui/x, read_only: true})`; edits
+use updateDataModel.
 
 ## Layout
 

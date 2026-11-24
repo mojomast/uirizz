@@ -651,24 +651,6 @@ def _log_action(
     return entry
 
 
-def take_recorded_clicks(session_id: str, *, limit: int, ttl_s: float) -> list[dict[str, Any]]:
-    """Read-only clicks for this session not yet shown to the agent, newest ``limit``.
-
-    Reads the audit log on disk, so a click recorded by the dashboard process
-    reaches the agent process. Marks every undelivered one as delivered (also
-    the ones dropped for age or the limit), in one locked step, so each click
-    is shown at most once and the backlog cannot grow without bound.
-    """
-    with _locked():
-        now = _now()
-        fresh = [a for a in session_actions(session_id, now)
-                 if a["status"] == "recorded" and not a.get("delivered")]
-        for act in fresh:
-            _append({"type": "delivered", "action_id": act["action_id"]})
-        live = [a for a in fresh if now - float(a.get("_t") or 0) <= ttl_s]
-        return live[-limit:] if limit > 0 else []
-
-
 def mark_announced(action_id: str) -> None:
     _append({"type": "announced", "action_id": action_id})
 
@@ -802,6 +784,24 @@ def _complete_action(action_id: Any, outcome: Any) -> dict[str, Any]:
         )
     _append({"type": "outcome", "action_id": action_id, "outcome": outcome})
     return {"action_id": action_id, "outcome": outcome}
+
+
+def take_recorded_clicks(session_id: str, *, limit: int, ttl_s: float) -> list[dict[str, Any]]:
+    """Read-only clicks for this session not yet shown to the agent, newest ``limit``.
+
+    Reads the audit log on disk, so a click recorded by the dashboard process
+    reaches the agent process. Marks every undelivered one as delivered (also
+    the ones dropped for age or the limit), in one locked step, so each click
+    is shown at most once and the backlog cannot grow without bound.
+    """
+    with _locked():
+        now = _now()
+        fresh = [a for a in session_actions(session_id, now)
+                 if a["status"] == "recorded" and not a.get("delivered")]
+        for act in fresh:
+            _append({"type": "delivered", "action_id": act["action_id"]})
+        live = [a for a in fresh if now - float(a.get("_t") or 0) <= ttl_s]
+        return live[-limit:] if limit > 0 else []
 
 
 # ------------------------------------------------------------ model-facing

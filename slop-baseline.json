@@ -1,0 +1,65 @@
+{
+  "evals/harness.py": {
+    "complexity": 1
+  },
+  "scripts/bump_plugin_version.py": {
+    "complexity": 1
+  },
+  "tests/test_actions.py": {
+    "complexity": 1
+  },
+  "tests/test_authoring_fixes.py": {
+    "complexity": 1
+  },
+  "tests/test_declared_actions.py": {
+    "complexity": 1
+  },
+  "tests/test_gate.py": {
+    "complexity": 1
+  },
+  "tests/test_ops.py": {
+    "complexity": 1
+  },
+  "tests/test_plugin_yaml_strict.py": {
+    "complexity": 1
+  },
+  "tests/test_register.py": {
+    "complexity": 1
+  },
+  "tests/test_skill_layout.py": {
+    "complexity": 1
+  },
+  "tools/slop-lint/slop_lint/baseline.py": {
+    "complexity": 1
+  },
+  "uirizz_plugin/actions.py": {
+    "swallowed-exception": 1
+  },
+  "uirizz_plugin/bindings.py": {
+    "complexity": 7
+  },
+  "uirizz_plugin/express.py": {
+    "complexity": 1
+  },
+  "uirizz_plugin/gate.py": {
+    "complexity": 9
+  },
+  "uirizz_plugin/hooks.py": {
+    "swallowed-exception": 1
+  },
+  "uirizz_plugin/register_util.py": {
+    "complexity": 1
+  },
+  "uirizz_plugin/store.py": {
+    "swallowed-exception": 1
+  },
+  "uirizz_plugin/tools.py": {
+    "complexity": 1
+  },
+  "uirizz_plugin/urls.py": {
+    "complexity": 2
+  },
+  "uirizz_plugin/validate.py": {
+    "complexity": 2
+  }
+}

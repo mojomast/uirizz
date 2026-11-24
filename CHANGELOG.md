@@ -65,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README how-it-works shots retaken after these fixes: two cards with
   distinct ids, an in-place data-only update with no duplicate, compiler
   recovery, a prose-only turn, and the approval-gate flow.
+- Read-only clicks waiting for the agent now come from the audit log on disk
+  instead of process memory, so a click recorded by the dashboard process
+  reaches an agent in another process (for example `hermes dashboard` and
+  `hermes gateway` run as separate services). Each click is delivered once,
+  at most the newest 20 per turn and only within 10 minutes, and its context
+  is the audit log's sanitized, secret-redacted copy. (rizzstack review,
+  Track C #18)
 
 ## [0.1.0] — 2026-11-23
 

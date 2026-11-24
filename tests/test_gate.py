@@ -18,10 +18,8 @@ SURF = "demo"
 @pytest.fixture(autouse=True)
 def _store(tmp_path):
     set_store_dir(tmp_path)
-    actions._PENDING.clear()
     yield
     set_store_dir(None)
-    actions._PENDING.clear()
 
 
 def _surface(messages=None):

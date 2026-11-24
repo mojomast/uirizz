@@ -500,6 +500,7 @@ def _fold(entries: list[dict[str, Any]], now: float | None = None) -> dict[str, 
                 "tool_call_id": None,
                 "error_type": None,
                 "outcome_announced": False,
+                "delivered": False,
                 "notes": [],
             }
         elif isinstance(aid, str) and aid in actions:
@@ -533,6 +534,8 @@ def _fold(entries: list[dict[str, Any]], now: float | None = None) -> dict[str, 
                 act["outcome_announced"] = True
             elif kind == "note":
                 act["notes"].append(e.get("note"))
+            elif kind == "delivered":
+                act["delivered"] = True
     for act in actions.values():
         if act["status"] == "pending_confirmation" and now - float(act["_t"] or 0) > APPROVAL_TTL_S:
             act["status"] = "expired"
@@ -788,6 +791,24 @@ def _complete_action(action_id: Any, outcome: Any) -> dict[str, Any]:
         )
     _append({"type": "outcome", "action_id": action_id, "outcome": outcome})
     return {"action_id": action_id, "outcome": outcome}
+
+
+def take_recorded_clicks(session_id: str, *, limit: int, ttl_s: float) -> list[dict[str, Any]]:
+    """Read-only clicks for this session not yet shown to the agent, newest ``limit``.
+
+    Reads the audit log on disk, so a click recorded by the dashboard process
+    reaches the agent process. Marks every undelivered one as delivered (also
+    the ones dropped for age or the limit), in one locked step, so each click
+    is shown at most once and the backlog cannot grow without bound.
+    """
+    with _locked():
+        now = _now()
+        fresh = [a for a in session_actions(session_id, now)
+                 if a["status"] == "recorded" and not a.get("delivered")]
+        for act in fresh:
+            _append({"type": "delivered", "action_id": act["action_id"]})
+        live = [a for a in fresh if now - float(a.get("_t") or 0) <= ttl_s]
+        return live[-limit:] if limit > 0 else []
 
 
 # ------------------------------------------------------------ model-facing

@@ -104,6 +104,7 @@ A card click is a **request, never approval**.
 - Classification is **fail-closed**. A click needs confirmation unless the action context says `read_only: true` and nothing points at a side effect. Verbs such as deploy, merge, send, and delete always gate.
 - Approval is the user's own short typed `yes <code>` in chat, after the pending notice, **single-use**, **session-scoped**, and **600 seconds** TTL. A bare `yes` is accepted only for a lone `risk: low` declared action; medium, high and free-form side effects need the code.
 - While pending, `pre_tool_call` vetoes every tool except `a2ui_render` and a few read-only helpers.
+- Read-only clicks reach the agent from the audit log on disk, once each, at most 20 per turn and only within 10 minutes. Their context is the log's sanitized copy: strings are capped at 200 characters and secret-looking keys are redacted.
 - `op=update` with `action_outcome=done` or `failed` is rejected until that action is approved.
 - The log is append-only and hash-chained under the plugin data directory (`audit/actions.jsonl`). Every read-decide-write step holds a cross-process lock, and rotation at 5 MB carries open actions and rate-limit state into the new file.
 

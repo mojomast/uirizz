@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from types import SimpleNamespace
 from typing import Any
 
+from uirizz_plugin import store
 from uirizz_plugin.api import surface_payload
 
 try:
-    from fastapi import APIRouter
+    from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 except ImportError:
     APIRouter = None  # type: ignore[assignment]
+
+POLL_S = 1.0
+MAX_SOCKET_S = 6 * 3600
 
 def _record_action(body: dict[str, Any]) -> dict[str, Any]:
     from uirizz_plugin.actions import record_action
@@ -71,8 +77,47 @@ def _audit(surface_id: str | None, session_id: str | None, limit: int | None) ->
     return audit_view(session_id=session_id, surface_id=surface_id, limit=limit)
 
 
+def _stored_revision(surface_id: str) -> int | None:
+    try:
+        rec = store.get_surface(surface_id)
+    except Exception:  # noqa: BLE001 — a bad read must not kill the socket
+        return None
+    if not rec:
+        return None
+    try:
+        return int(rec.get("revision", 0))
+    except (TypeError, ValueError):
+        return None
+
+
 if APIRouter is not None:
     router = APIRouter()
+
+    @router.websocket("/surfaces/ws")
+    async def surfaces_ws(websocket: WebSocket) -> None:
+        try:
+            surface_id = store.normalize_surface_id(
+                websocket.query_params.get("surface_id"), required=True
+            )
+        except Exception:  # noqa: BLE001
+            await websocket.close(code=1008)
+            return
+        await websocket.accept()
+        deadline = time.monotonic() + MAX_SOCKET_S
+        last: int | None = None
+        try:
+            while time.monotonic() < deadline:
+                # Read storage each tick: the tool may run in another process.
+                rev = _stored_revision(surface_id)
+                if rev is not None and rev != last:
+                    last = rev
+                    await websocket.send_json(
+                        {"type": "revision", "surface_id": surface_id, "revision": rev}
+                    )
+                await asyncio.sleep(POLL_S)
+            await websocket.close()
+        except (WebSocketDisconnect, RuntimeError):
+            return
 
     @router.get("/surfaces/{surface_id}")
     def get_surface(surface_id: str) -> dict[str, Any]:

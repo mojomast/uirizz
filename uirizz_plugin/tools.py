@@ -487,6 +487,9 @@ def _op_update(
         "session_id": existing.get("session_id"),
         "conversation_id": existing.get("conversation_id"),
     }
+    from uirizz_plugin.compact import maybe_compact
+
+    record["messages"] = maybe_compact(record["messages"])
     put_surface(record)
     return _success("update", record, _action_warnings(_rebind(admitted["messages"], surface_id, update=True)))
 

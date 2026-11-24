@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (next level)
+
+- uirizz/1 catalog: Chart, DataTable, Metric, Progress, Badge, Callout,
+  KeyValueList, Timeline, CodeBlock. Contract in
+  `uirizz_plugin/catalogs/uirizz_components.json`, merged catalog built by
+  `scripts/build_catalog.py` and checked in CI. Express compiles against it;
+  admission accepts it beside the Basic Catalog id.
+- Charts and tables as inputs: `selection` writes the clicked row to the data
+  model before the action fires.
+- Desktop: ECharts (tree-shaken, SVG renderer, rich-text tooltips) with a
+  "View as table" toggle; real `<table>` DataTable with sort and paging.
+- Live updates over `ctx.socket` (`/surfaces/ws`, revision numbers only),
+  adaptive polling (4 s to 30 s, paused when hidden), highest-revision-wins
+  de-duplication, an "Open in canvas" workspace tab, and read-only clicks with
+  a `userMessage` start a turn as `[card] ...` (never counted as a yes).
+- Cards record their conversation; updates from another conversation are
+  refused (`wrong_conversation`). `pre_llm_call` lists this chat's cards so the
+  agent updates instead of re-presenting.
+- `fallback_text` is generated from the components when omitted.
+- Stored surfaces compact after 40 messages.
+- `op=describe topic=components` and skills/uirizz/references/components.md.
+
+### Changed
+
+- Express output now carries the uirizz/1 catalog id. The Desktop bundle
+  grows from 858 KB to 1.46 MB (ECharts).
+
 ### Fixed
 
 - Express presents without `surface_id` no longer collide on the compiler's

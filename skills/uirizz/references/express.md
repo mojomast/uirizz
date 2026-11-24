@@ -65,8 +65,8 @@ Snake_case Material names (`check_circle`, `trending_up`) are rejected.
 
 - Headings: Text has no `h1`-`h5` variant. Use Markdown in the string:
   `Text("## Title")`, `Text("**bold** and normal")`. Keep Markdown simple.
-- No Table: a header `Row` of caption Texts plus a `List` template of `Row`s
-  with matching `weight`s lines columns up.
+- Tables, charts, metrics and progress bars are uirizz components
+  (`DataTable`, `Chart`, `Metric`, `Progress`): see `op=describe topic=components`.
 - Card takes one child. `Card(Text("a"), Text("b"))` fails; use `Card(Column([...]))`.
 - `weight` only does something on a direct Row/Column child. The compiler
   accepts it elsewhere, so a "narrow card" usually means a missing weight.

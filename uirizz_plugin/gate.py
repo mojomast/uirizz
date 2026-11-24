@@ -914,6 +914,15 @@ def _gate_notice(session_id: str | None) -> str | None:
             extra = ""
             if "needs_code" in (act.get("notes") or []):
                 extra = " The user replied yes without the code; this action needs the code. "
+            if act["announced"]:
+                reminder = (
+                    f"Approval gate: action_id={aid} code={_short(aid)} event={_clean(act['event'])} "
+                    f"status=pending_confirmation. Reply `{reply}` to approve or `no` to deny."
+                )
+                if extra:
+                    reminder += " The earlier yes was without the code."
+                parts.append(reminder)
+                continue
             if b:
                 parts.append(
                     f"{head} status=pending_confirmation. The card shows uirizz's own confirm panel: "

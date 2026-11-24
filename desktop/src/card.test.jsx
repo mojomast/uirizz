@@ -1,4 +1,4 @@
-import { act, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jsx } from 'react/jsx-runtime'
 import { SurfaceCard } from './card.jsx'
@@ -51,13 +51,37 @@ vi.mock('@a2ui/web_core/v1_0', () => {
 import { MessageProcessor } from '@a2ui/web_core/v1_0'
 
 afterEach(() => {
+  cleanup()
   MessageProcessor._instances.length = 0
 })
+
+// Fake timers: `intervals[0]()` fires the most recently scheduled poll.
+function fakeTimers() {
+  const timers = new Map()
+  let n = 0
+  const fire = () => {
+    const last = [...timers].pop()
+    if (!last) return undefined
+    timers.delete(last[0])
+    return last[1]()
+  }
+  return {
+    timers,
+    intervals: { 0: fire },
+    setTimeout: (fn) => {
+      n += 1
+      timers.set(n, fn)
+      return n
+    },
+    clearTimeout: (id) => timers.delete(id),
+  }
+}
 
 function makeCtx(payloads) {
   const calls = []
   let i = 0
-  const intervals = []
+  const ft = fakeTimers()
+  const intervals = ft.intervals
   const ctx = {
     rest: vi.fn(async (path, init = {}) => {
       calls.push({ path, init })
@@ -68,11 +92,8 @@ function makeCtx(payloads) {
       }
       return { ok: true }
     }),
-    setInterval: (fn, ms) => {
-      intervals.push(fn)
-      return 1
-    },
-    clearInterval: vi.fn(),
+    setTimeout: ft.setTimeout,
+    clearTimeout: ft.clearTimeout,
   }
   return { ctx, calls, intervals }
 }
@@ -184,7 +205,8 @@ describe('SurfaceCard', () => {
 
   function gateCtx(auditStatuses, actionResponse) {
     const calls = []
-    const intervals = []
+    const ft = fakeTimers()
+  const intervals = ft.intervals
     let auditIndex = 0
     const surface = {
       ok: true,
@@ -204,11 +226,8 @@ describe('SurfaceCard', () => {
         }
         return { ok: true }
       }),
-      setInterval: (fn) => {
-        intervals.push(fn)
-        return 1
-      },
-      clearInterval: vi.fn(),
+      setTimeout: ft.setTimeout,
+      clearTimeout: ft.clearTimeout,
     }
     return { ctx, calls, intervals }
   }
@@ -284,7 +303,8 @@ describe('SurfaceCard', () => {
   }
 
   function boundCtx(auditEntries, actionResponse) {
-    const intervals = []
+    const ft = fakeTimers()
+  const intervals = ft.intervals
     let i = 0
     const surface = {
       ok: true,
@@ -303,11 +323,8 @@ describe('SurfaceCard', () => {
         }
         return { ok: true }
       }),
-      setInterval: (fn) => {
-        intervals.push(fn)
-        return 1
-      },
-      clearInterval: vi.fn(),
+      setTimeout: ft.setTimeout,
+      clearTimeout: ft.clearTimeout,
     }
     return { ctx, intervals }
   }
@@ -363,5 +380,144 @@ describe('SurfaceCard', () => {
     await waitFor(() => expect(container.querySelector('[data-uirizz-gate="rejected"]')).toBeTruthy())
     expect(container.textContent).toContain('Nothing will run')
     expect(container.querySelector('[data-uirizz-gate="pending_confirmation"]')).toBeNull()
+  })
+
+  const SURFACE = (rev, text = 'Hello there\nsecond line') => ({
+    ok: true,
+    surface_id: 'demo',
+    revision: rev,
+    fallback_text: text,
+    messages: [{ version: '1.0', createSurface: { surfaceId: 'demo' } }],
+  })
+
+  function mountCard(ctx, extra = {}, revision = 1) {
+    return render(
+      jsx(SurfaceCard, {
+        file: { path: '/never-open' },
+        args: { surface_id: 'demo' },
+        result: { surface_id: 'demo', revision, fallback_text: 'Hello there\nsecond line' },
+        sessionId: 'sess-1',
+        fallback: null,
+        ctx,
+        ...extra,
+      }),
+    )
+  }
+
+  it('opens ctx.socket on the surfaces ws path, refreshes on a newer revision, and disposes on unmount', async () => {
+    const ft = fakeTimers()
+    let onMessage
+    const dispose = vi.fn()
+    const payloads = [SURFACE(1), SURFACE(2)]
+    let i = 0
+    const ctx = {
+      rest: vi.fn(async (path) => (path.startsWith('/surfaces/') ? payloads[Math.min(i++, 1)] : { ok: true })),
+      setTimeout: ft.setTimeout,
+      clearTimeout: ft.clearTimeout,
+      socket: vi.fn((path, cb) => {
+        onMessage = cb
+        return dispose
+      }),
+    }
+    const { unmount } = mountCard(ctx)
+    await waitFor(() => expect(ctx.socket).toHaveBeenCalled())
+    expect(ctx.socket.mock.calls[0][0]).toBe('/surfaces/ws?surface_id=demo')
+    await waitFor(() => expect(ctx.rest).toHaveBeenCalledTimes(1))
+    // stale and foreign messages do nothing
+    await act(async () => {
+      onMessage(JSON.stringify({ type: 'revision', surface_id: 'demo', revision: 1 }))
+      onMessage({ type: 'revision', surface_id: 'other', revision: 9 })
+      onMessage('not json')
+    })
+    expect(ctx.rest).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      onMessage(JSON.stringify({ type: 'revision', surface_id: 'demo', revision: 2 }))
+    })
+    await waitFor(() => expect(ctx.rest).toHaveBeenCalledTimes(2))
+    unmount()
+    expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('collapses an older mount to a stub and expands it again when the newer one unmounts', async () => {
+    const { ctx } = makeCtx([SURFACE(2)])
+    const older = mountCard(ctx, {}, 1)
+    await waitFor(() => expect(older.container.querySelector('[data-uirizz="ready"]')).toBeTruthy())
+    const newer = mountCard(ctx, {}, 2)
+    await waitFor(() => {
+      const stub = older.container.querySelector('[data-uirizz="superseded"]')
+      expect(stub).toBeTruthy()
+      expect(stub.textContent).toBe('Updated below (revision 2)')
+    })
+    await waitFor(() => expect(newer.container.querySelector('[data-uirizz="ready"]')).toBeTruthy())
+    expect(newer.container.querySelector('[data-uirizz="superseded"]')).toBeNull()
+    newer.unmount()
+    await waitFor(() => expect(older.container.querySelector('[data-uirizz="ready"]')).toBeTruthy())
+  })
+
+  it('shows Open in canvas only with host.openWorkspace and opens a canvas variant', async () => {
+    const { ctx } = makeCtx([SURFACE(1)])
+    const none = mountCard(ctx, { host: {} })
+    await waitFor(() => expect(none.container.querySelector('[data-uirizz="ready"]')).toBeTruthy())
+    expect(none.container.querySelector('[data-uirizz-open-canvas]')).toBeNull()
+    none.unmount()
+
+    const host = { openWorkspace: vi.fn(() => () => {}) }
+    const { container } = mountCard(ctx, { host })
+    await waitFor(() => expect(container.querySelector('[data-uirizz-open-canvas]')).toBeTruthy())
+    const btn = container.querySelector('[data-uirizz-open-canvas]')
+    expect(btn.getAttribute('aria-label')).toBe('Open in canvas')
+    fireEvent.click(btn)
+    expect(host.openWorkspace).toHaveBeenCalledTimes(1)
+    const [id, opts] = host.openWorkspace.mock.calls[0]
+    expect(id).toBe('uirizz-demo')
+    expect(opts.title).toBe('Hello there')
+    const canvas = render(opts.render())
+    await waitFor(() => expect(canvas.container.querySelector('[data-uirizz="ready"]')).toBeTruthy())
+    const root = canvas.container.querySelector('[data-uirizz="ready"]')
+    expect(root.getAttribute('data-variant')).toBe('canvas')
+    expect(root.style.maxHeight).toBe('')
+    expect(canvas.container.querySelector('[data-uirizz-open-canvas]')).toBeNull()
+    // the in-chat card is not collapsed by its own canvas copy
+    expect(container.querySelector('[data-uirizz="ready"]')).toBeTruthy()
+  })
+
+  async function click(ctx, host, action) {
+    mountCard(ctx, { host })
+    await waitFor(() => expect(MessageProcessor._instances[0]).toBeTruthy())
+    await act(async () => {
+      await MessageProcessor._instances[0].actionHandler({
+        name: 'ask',
+        surfaceId: 'demo',
+        sourceComponentId: 'btn',
+        timestamp: 't',
+        context: {},
+        ...action,
+      })
+    })
+  }
+
+  it('submits a [card] chat message for a recorded plain click that carries userMessage', async () => {
+    const { ctx } = gateCtx(['approved'], { ok: true, action_id: 'act-1', status: 'recorded' })
+    const host = { composer: { submit: vi.fn(() => true) } }
+    await click(ctx, host, { userMessage: 'x'.repeat(600) })
+    expect(host.composer.submit).toHaveBeenCalledTimes(1)
+    expect(host.composer.submit).toHaveBeenCalledWith('sess-1', '[card] ' + 'x'.repeat(500))
+  })
+
+  it('never submits for gated, declared, message-less or non-recorded clicks', async () => {
+    const cases = [
+      [{ ok: true, action_id: 'act-1', status: 'pending_confirmation', requires_confirmation: true }, { userMessage: 'hi' }],
+      [{ ok: true, action_id: 'act-1', status: 'recorded', binding: BINDING }, { userMessage: 'hi' }],
+      [{ ok: true, action_id: 'act-1', status: 'recorded' }, {}],
+      [{ ok: true, action_id: 'act-1', status: 'rejected' }, { userMessage: 'hi' }],
+    ]
+    for (const [response, action] of cases) {
+      MessageProcessor._instances.length = 0
+      cleanup()
+      const { ctx } = gateCtx(['approved'], response)
+      const host = { composer: { submit: vi.fn(() => true) } }
+      await click(ctx, host, action)
+      expect(host.composer.submit).not.toHaveBeenCalled()
+    }
   })
 })

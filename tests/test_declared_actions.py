@@ -75,7 +75,6 @@ def _env(tmp_path):
     set_store_dir(tmp_path)
     bindings.set_actions_dir(tmp_path)
     (tmp_path / "actions.yaml").write_text(ACTIONS_YAML, encoding="utf-8")
-    actions._PENDING.clear()
     put_surface({"surface_id": SURF, "revision": 1, "fallback_text": "Card", "messages": [],
                  "component_count": 1, "component_ids": ["root"]})
     yield tmp_path
@@ -83,7 +82,6 @@ def _env(tmp_path):
     for name in list(bindings._api_defs):
         bindings.unregister_action(name)
     set_store_dir(None)
-    actions._PENDING.clear()
 
 
 def _click(event, context, session=SID):

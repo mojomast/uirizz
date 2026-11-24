@@ -293,9 +293,12 @@ export class UirizzKeyValueListElement extends SimpleElement {
     const p = this.controller?.props
     if (!p) return nothing
     const items = validKeyValueItems(p.items)
-    return html`<dl style="${font}display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:0;font-size:14px;">
+    // Inline resets: the card renders inside the host chat's Typography `prose`
+    // scope, whose `dt { margin-top: 1.25em }` and `li { margin: 0.5em 0 }`
+    // push labels and timeline rows off their siblings' baselines.
+    return html`<dl style="${font}display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:0;font-size:14px;align-items:start;">
       ${items.map(
-        (it) => html`<dt style="color:${COLORS.muted};">${it.key}</dt><dd style="margin:0;">${it.value}</dd>`,
+        (it) => html`<dt style="color:${COLORS.muted};margin:0;font-weight:400;line-height:1.5;">${it.key}</dt><dd style="margin:0;line-height:1.5;">${it.value}</dd>`,
       )}
     </dl>`
   }
@@ -309,7 +312,7 @@ export class UirizzTimelineElement extends SimpleElement {
     const items = validTimelineItems(p.items)
     return html`<ol style="${font}list-style:none;margin:0;padding:0;font-size:14px;">
       ${items.map(
-        (it) => html`<li style="display:flex;gap:10px;padding:0 0 12px 0;">
+        (it) => html`<li style="display:flex;gap:10px;margin:0;padding:0 0 12px 0;">
           <span aria-hidden="true" style="flex:none;width:10px;height:10px;margin-top:5px;border-radius:50%;background:${statusColor(it.status)};"></span>
           <div>
             ${it.date ? html`<div style="font-size:12px;color:${COLORS.muted};">${it.date}</div>` : nothing}

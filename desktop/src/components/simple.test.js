@@ -19,6 +19,8 @@ import {
   UirizzCalloutElement,
   UirizzMetricElement,
   UirizzCodeBlockElement,
+  UirizzKeyValueListElement,
+  UirizzTimelineElement,
 } from './simple.js'
 
 const ok = (api, v) => api.schema.safeParse(v).success
@@ -148,6 +150,15 @@ describe('rendering', () => {
     expect(a.host.textContent).toContain('▲')
     const b = renderWith(UirizzMetricElement, { label: 'L', value: 'V', sparkline: [1, 'x'] })
     expect(b.host.querySelector('svg')).toBeNull()
+  })
+  it('KeyValueList and Timeline reset the prose margins that break row alignment', () => {
+    const kv = renderWith(UirizzKeyValueListElement, { items: [{ key: 'Prompt cache', value: 'unchanged' }] })
+    expect(kv.host.querySelector('dt').getAttribute('style')).toContain('margin:0')
+    expect(kv.host.querySelector('dd').getAttribute('style')).toContain('margin:0')
+    expect(kv.host.querySelector('dl').getAttribute('style')).toContain('align-items:start')
+
+    const tl = renderWith(UirizzTimelineElement, { items: [{ date: '01', title: 'Receive' }] })
+    expect(tl.host.querySelector('li').getAttribute('style')).toContain('margin:0')
   })
   it('CodeBlock copies and shows Copied for 1.5s, failing silently', async () => {
     vi.useFakeTimers()

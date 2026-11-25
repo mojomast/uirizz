@@ -140,6 +140,11 @@ def main(argv: list[str] | None = None) -> int:
     verify.add_argument("--log", type=Path, default=None, help="audit log (default: the plugin's)")
     args = parser.parse_args(argv)
     try:
+        if not args.anchors.is_file():
+            # A named anchor file that is absent is a configuration error, not a
+            # clean pass: reporting ok here would let a mistyped path read as
+            # evidence that the chain was checked against anchors.
+            raise FileNotFoundError(args.anchors)
         result = verify_anchors(_read_jsonl(args.anchors), args.log)
     except (OSError, ValueError) as exc:
         result = {"ok": False, "problems": [_problem("unreadable", detail=type(exc).__name__)]}

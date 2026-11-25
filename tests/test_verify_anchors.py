@@ -126,3 +126,10 @@ def test_cli_verify_anchors(tmp_path, capsys):
     assert anchors.main(["verify", "--anchors", str(path)]) == 1
     path.write_text("{not json\n")
     assert anchors.main(["verify", "--anchors", str(path)]) == 1
+
+
+def test_a_missing_anchor_file_is_unreadable_not_a_clean_pass(tmp_path, capsys):
+    _fill(5)
+    assert anchors.main(["verify", "--anchors", str(tmp_path / "absent.jsonl")]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False and out["problems"][0]["kind"] == "unreadable"

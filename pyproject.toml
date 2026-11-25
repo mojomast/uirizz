@@ -23,6 +23,9 @@ dev = [
   "tiktoken>=0.7,<1",
 ]
 
+[project.scripts]
+uirizz = "uirizz_plugin.anchors:main"
+
 [project.urls]
 Homepage = "https://github.com/mojomast/uirizz"
 Research = "https://github.com/mojomast/uirizz/blob/main/docs/RESEARCH.md"

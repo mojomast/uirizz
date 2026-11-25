@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `uirizz verify --anchors FILE` (`uirizz_plugin/anchors.py`) recomputes the
+  action audit chain against `rizzstack.audit-anchor/1` anchors written by a
+  collector outside uirizz (workflow `contrib/rizzstack-observability/audit_anchor.py`).
+  It fails on a re-hashed rewrite, a truncated log, a deleted anchor, a rotation
+  that does not continue its backup, a broken chain or a malformed anchor.
+  Anchors for segments rotated out of reach count as unverifiable, never as passing.
+
 ### Security
 
 - A bare `yes` now approves only a lone `risk: low` declared action. Medium,

@@ -190,6 +190,8 @@ Token budgets (enforced in `tests/test_tokens.py`):
 - Skill (`skills/uirizz/SKILL.md`): under **2,000** o200k tokens.
 - Tool schema: under **500** o200k tokens.
 
+Changes land through pull requests that need the required `ci-gate` check. On GitHub, agents never act as the owner. The coordinator opens, updates and merges PRs and reruns CI as the `rizzstack-coordinator[bot]` GitHub App, outside reviews are posted as `rizzstack-reviewer[bot]`, and owner approvals and release yeses come from the owner's own account. Setup: [rizzstack docs/github-apps.md](https://github.com/mojomast/rizzstack/blob/main/docs/github-apps.md). Gating reviews by bot login is planned, not yet enforced. uirizz itself makes no GitHub calls.
+
 `plugin.yaml` version is the source of truth. Bump with `python scripts/bump_plugin_version.py <new-version>`.
 
 ## Changelog and license

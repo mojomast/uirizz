@@ -84,7 +84,12 @@ class WorkflowHygieneTests(unittest.TestCase):
             m = re.search(r"(?m)^permissions:\s*\n((?:[ \t]+.*\n)+)", t)
             self.assertIsNotNone(m, "%s: top-level permissions block required" % wf.name)
             self.assertIn("contents: read", m.group(1))
-            self.assertNotRegex(t, r"(?m)^\s+[a-z-]+:\s*write\s*$", wf.name)
+            writes = re.findall(r"(?m)^\s+[a-z-]+:\s*write\s*$", t)
+            if wf.name == "review-rerun.yml":
+                # The rerun job needs actions: write to call actions/runs/<id>/rerun-failed-jobs.
+                self.assertEqual([line.strip() for line in writes], ["actions: write"], wf.name)
+            else:
+                self.assertEqual(writes, [], wf.name)
 
 
 class SlopLintRatchetTests(unittest.TestCase):
